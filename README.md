@@ -85,7 +85,7 @@ int main(void)
         .SlaveMode              = TIM_SLAVE_MODE_DISABLE;
         .TimerFrequency         = 10000000u;
         .AutoreloadPreloadState = TIM_FUNCTION_INACTIVE;
-        .UpdateEventState       = TIM_FUNCTION_INACTIVE;
+        .UpdateEventState       = TIM_FUNCTION_ACTIVE;
         .CounterDirection       = TIM_COUNTER_DIR_UP;
         ...
     };
