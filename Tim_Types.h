@@ -1,4 +1,9 @@
 /**
+ * \defgroup Tim Tim
+ * \brief Tim module
+ */
+
+/**
  * \author Mr.Nobody
  * \file Tim_Types.h
  * \ingroup Tim

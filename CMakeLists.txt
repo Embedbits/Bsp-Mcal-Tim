@@ -25,7 +25,7 @@ set( Tim_SourceFiles
 # List of public header files provided by the current library
 set( Tim_PublicHeaders 
     Tim_Types.h
-    Tim_Port.h 
+    Tim_Port.h
 )
 
 
@@ -81,10 +81,9 @@ target_include_directories( Tim_Lib
     PUBLIC
         $<BUILD_INTERFACE:${PUBLIC_HEADERS_DIR}>
         $<INSTALL_INTERFACE:include>
-        Tim_PublicIncludeDirs
+        ${Tim_PublicIncludeDirs}
     PRIVATE
-        ${Tim_IncludeDirs}
-        Tim_PrivateIncludeDirs
+        ${Tim_PrivateIncludeDirs}
 )
 
 

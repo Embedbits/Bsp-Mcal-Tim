@@ -1291,6 +1291,7 @@ tim_RequestState_t Tim_Deinit( tim_PeriphConfig_t * const timConfig )
  */
 void Tim_Task( void )
 {
+    return;
 }
 
 
