@@ -52,14 +52,20 @@ static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag
 /* ========================= SYMBOLIC CONSTANTS ============================= */
 
 /*----------------------------- Board configuration --------------------------*/
-#if defined(IT_BOARD_STM32F4DISCOVERY)
+/* Boards are named by their MCU (IT_BOARD_<MCU>, name of the board from the detection) */
+#if defined(IT_BOARD_STM32F405xG) || \
+    defined(IT_BOARD_STM32F407xG) || \
+    defined(IT_BOARD_STM32F415xG) || \
+    defined(IT_BOARD_STM32F417xG)
 
     /** P1 header pin PE9 (TIM1_CH1) - not connected on the board */
     #define IT_TIM_PWM_PIN                  ( TIM_1_CH1_PE9 )
     #define IT_TIM_PWM_PORT                 ( GPIO_PORT_E )
     #define IT_TIM_PWM_PIN_ID               ( GPIO_PIN_ID_9 )
 
-#elif defined(IT_BOARD_NUCLEO_F401RE) || defined(IT_BOARD_NUCLEO_F411RE) || defined(IT_BOARD_NUCLEO_F446RE)
+#elif defined(IT_BOARD_STM32F401xE) || \
+      defined(IT_BOARD_STM32F411xE) || \
+      defined(IT_BOARD_STM32F446xE)
 
     /** Arduino D7 (PA8, TIM1_CH1) - not connected on the board */
     #define IT_TIM_PWM_PIN                  ( TIM_1_CH1_PA8 )
