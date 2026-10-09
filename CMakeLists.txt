@@ -25,13 +25,14 @@ set( Tim_SourceFiles
 # List of public header files provided by the current library
 set( Tim_PublicHeaders 
     Tim_Types.h
-    Tim_Port.h 
+    Tim_Port.h
 )
 
 
 # List of dependent libraries that are publicly used by the current library
 set( Tim_PublicDependentLibs
-    Ral_Lib 
+    Ral_Lib
+    Gpio_Lib
 )
 
 
@@ -39,7 +40,6 @@ set( Tim_PublicDependentLibs
 set( Tim_PrivateDependentLibs
     Rcc_Lib
     Nvic_Lib
-    Gpio_Lib
 )
 
 
@@ -81,10 +81,9 @@ target_include_directories( Tim_Lib
     PUBLIC
         $<BUILD_INTERFACE:${PUBLIC_HEADERS_DIR}>
         $<INSTALL_INTERFACE:include>
-        Tim_PublicIncludeDirs
+        ${Tim_PublicIncludeDirs}
     PRIVATE
-        ${Tim_IncludeDirs}
-        Tim_PrivateIncludeDirs
+        ${Tim_PrivateIncludeDirs}
 )
 
 
@@ -94,4 +93,14 @@ message(STATUS "Tim_Lib library created")
 #========================= Documentation configuration ========================#
 if(DOXYGEN_AVAILABLE STREQUAL "ON")
     Doxygen_AddPath("${CMAKE_CURRENT_SOURCE_DIR}/")
+endif()
+
+#========================= Unit tests configuration ===========================#
+if(UNIT_TESTING_AVAILABLE STREQUAL "ON")
+    UnitTesting_AddPath("${CMAKE_CURRENT_SOURCE_DIR}/Tests/UnitTests")
+endif()
+
+#===================== Integration tests configuration ========================#
+if(INTEGRATION_TESTING_AVAILABLE STREQUAL "ON")
+    IntegrationTesting_AddPath("${CMAKE_CURRENT_SOURCE_DIR}/Tests/IntegrationTests")
 endif()
