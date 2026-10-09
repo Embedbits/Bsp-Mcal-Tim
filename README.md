@@ -70,6 +70,72 @@ Everything else — configuration files, static tables, helper functions — is 
 
 ---
 
+## 🔧 STM32G4 specifics
+
+- Public interface of the STM32H5 module (Dev/STM32H5).
+- Timers: TIM1 / TIM8 / TIM20 (advanced, 6 channels, complementary outputs CH1N - CH4N, break and
+  break 2), TIM2 / TIM5 (32-bit), TIM3 / TIM4, TIM6 / TIM7 (basic), TIM15 (2 channels, CH1N),
+  TIM16 / TIM17 (1 channel, CH1N). TIM5 and TIM20 only on devices with the peripheral (pin and
+  peripheral enumerations are guarded). HRTIM1 is not handled by this module.
+- Pin enumerations (`TIM_<n>_CH<k>_P<x><y>`, `..._CH<k>N_...`, `..._BKIN_...`, `..._BKIN2_...`,
+  `..._ETR_...`) are generated from the STM32CubeMX database - pins missing on some device lines
+  are guarded by the device / port.
+- Shared NVIC lines: TIM1 break / update / trigger lines are shared with TIM15 / TIM16 / TIM17
+  global interrupts (`TIM1_BRK_TIM15`, `TIM1_UP_TIM16`, `TIM1_TRG_COM_TIM17`) - the line handler
+  processes the interrupts of both timers. TIM6 shares its line with DAC1 / DAC3 underrun, TIM7
+  with DAC2 / DAC4 underrun on devices with DAC2 (DAC interrupts are not processed by this module).
+  `Tim_Deinit()` does not disable shared NVIC lines (interrupt sources of the timer are disabled by
+  the peripheral reset).
+- Features of the STM32H5 interface not available on STM32G4:
+  - encoder index blanking - `tim_EncoderIndexConfig_t::Blanking` shall be
+    `TIM_INDEX_BLANK_ALWAYS`, `TIM_INDEX_BLANK_TI3` / `TIM_INDEX_BLANK_TI4` return error,
+  - DMA burst source selection (DBSS) - the burst is executed by any enabled DMA request of the
+    timer, `burstSource` of `Tim_Set_DmaBurst()` is only validated. `TIM_DMA_BURST_REG_OR1` selects
+    the TIMx_OR register.
+- DMA requests of the timers are routed by DMAMUX1 (Dma module), register addresses for DMA
+  transfers are provided by `Tim_Get_DmaRegAddr()`.
+- Device errata (ES0430 2.12 / ES0431 2.8 / ES0523 2.8, no workaround in the module - the
+  application shall avoid the configurations):
+  - one-pulse mode trigger not detected in master-slave reset + trigger configuration - keep the
+    master / slave mode (`Tim_Set_MasterSlaveModeActive()`, MSM) inactive unless cycle-accurate
+    synchronization is required,
+  - consecutive compare event missed when CCR changes ARR -> 0 (edge-aligned) or at the crest /
+    valley (center-aligned) - single-cycle pulses in toggle mode,
+  - compare event missed in center-aligned mode 1 / 2 with dithering and CCR within 16 of the
+    period limits (toggle mode),
+  - output compare clear (ocref_clr) not working with external counter reset (reset, reset +
+    trigger, gated + reset slave modes),
+  - bidirectional break / break 2 not working with pulses shorter than two kernel clock periods.
+
+---
+
+## 🔗 Trigger inputs and ETR sources
+
+The trigger input of the slave mode controller / external clock mode 1 (`tim_ExtClkSource_t`, used by
+`Tim_Set_SlaveMode()`, `Tim_Set_ClockSource()` and the members `ExtClockSource` / `SlaveTriggerInput` of
+`tim_PeriphConfig_t`) is a list of the valid items of every timer, so a connection that the hardware does
+not have cannot be selected:
+
+- `TIM_TRIGGER_INPUT_<slave>_ITR<n>_<master timer>_<signal>` - internal trigger input named by the slave timer,
+  the input and the master timer signal behind it (e.g. `TIM_TRIGGER_INPUT_TIM3_ITR1_TIM2_TRGO`),
+- `TIM_TRIGGER_INPUT_<timer>_TI1F_ED` / `_TI1FP1` / `_TI2FP2` / `_ETRF` - inputs of the timer itself (`_ETRF` only
+  on the timers with the ETR input),
+- `TIM_TRIGGER_INPUT_UNUSED` - unused trigger input; an item of another timer is refused by the functions.
+
+The connections come from the tables "TIMx internal trigger connection" of the reference manual (RM0440): an item is
+active exactly on the device lines where the manual has the connection and the master exists (e.g. TIM1 ITR5 = TIM8 TRGO, TIM2 ITR11 = USB SOF only with USB, ITR10 = HRTIM1 only with HRTIM1; TIM15 has no ETRF). 
+
+The source of the external trigger input (`tim_EtrSource_t`, `Tim_Set_EtrSource()`) is a list in the same way:
+`TIM_ETR_SOURCE_<timer>_PIN` (the ETR pin) and `TIM_ETR_SOURCE_<timer>_<signal>` (e.g. `TIM_ETR_SOURCE_TIM1_ADC1_AWD1`) from the Table 268 and Table 292 "Interconnect to the tim_etr input multiplexer"
+of RM0440; COMPx outputs exist only on the devices with the comparator, ADCx watchdogs only with the ADC.
+
+The source of a timer channel input (`tim_InputSource_t`, `Tim_Set_InputSource()` / `Tim_Get_InputSource()`) is a list
+in the same way: `TIM_INPUT_SOURCE_<timer>_CH<n>_PIN` (the channel input pin) and
+`TIM_INPUT_SOURCE_<timer>_CH<n>_<signal>` (e.g. `TIM_INPUT_SOURCE_TIM2_CH1_COMP1_OUT`) from the tables "Interconnect to the tim_tiX input
+multiplexer" of RM0440; COMPx outputs only on the devices with the comparator, TIM16 / TIM17 HSE / 32 is not offered (it needs HSE32EN of TIMx_OR1). The functions refuse an item of another timer or channel.
+
+---
+
 ## ⚙️ Typical Usage Example
 
 ```c
@@ -85,7 +151,7 @@ int main(void)
         .SlaveMode              = TIM_SLAVE_MODE_DISABLE;
         .TimerFrequency         = 10000000u;
         .AutoreloadPreloadState = TIM_FUNCTION_INACTIVE;
-        .UpdateEventState       = TIM_FUNCTION_INACTIVE;
+        .UpdateEventState       = TIM_FUNCTION_ACTIVE;
         .CounterDirection       = TIM_COUNTER_DIR_UP;
         ...
     };

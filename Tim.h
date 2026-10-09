@@ -11,11 +11,6 @@
 
 #ifndef TIM_TIM_H
 #define TIM_TIM_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ============================= INCLUDES =================================== */
 #include "Tim_Types.h"                      /* Module types definition        */
 /* ============================= TYPEDEFS =================================== */
@@ -28,8 +23,6 @@ extern "C" {
 
 /* ======================== EXPORTED FUNCTIONS ============================== */
 
-#ifdef __cplusplus
-}
-#endif
+
 
 #endif /* TIM_TIM_H */
