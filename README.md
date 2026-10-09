@@ -70,6 +70,33 @@ Everything else — configuration files, static tables, helper functions — is 
 
 ---
 
+## 🔗 Trigger inputs and ETR sources
+
+The trigger input of the slave mode controller / external clock mode 1 (`tim_ExtClkSource_t`, used by
+`Tim_Set_SlaveMode()`, `Tim_Set_ClockSource()` and the members `ExtClockSource` / `SlaveTriggerInput` of
+`tim_PeriphConfig_t`) is a list of the valid items of every timer, so a connection that the hardware does
+not have cannot be selected:
+
+- `TIM_TRIGGER_INPUT_<slave>_ITR<n>_<master timer>_<signal>` - internal trigger input named by the slave timer,
+  the input and the master timer signal behind it (e.g. `TIM_TRIGGER_INPUT_TIM3_ITR1_TIM2_TRGO`),
+- `TIM_TRIGGER_INPUT_<timer>_TI1F_ED` / `_TI1FP1` / `_TI2FP2` / `_ETRF` - inputs of the timer itself (`_ETRF` only
+  on the timers with the ETR input),
+- `TIM_TRIGGER_INPUT_UNUSED` - unused trigger input; an item of another timer is refused by the functions.
+
+The connections come from the tables "TIMx internal trigger connection" of the reference manual (RM0481, RM0492, RM0517): an item is
+active exactly on the device lines where the manual has the connection and the master exists (e.g. TIM1 ITR5 = TIM8 TRGO only with TIM8, TIM13 / TIM14 / TIM16 / TIM17 only on STM32H562 / H563 / H573, ITR12 = USB SOF of TIM2 / TIM5 only with USB; TIM12 / TIM15 have no ETRF). 
+
+The source of the external trigger input (`tim_EtrSource_t`, `Tim_Set_EtrSource()`) is a list in the same way:
+`TIM_ETR_SOURCE_<timer>_PIN` (the ETR pin) and `TIM_ETR_SOURCE_<timer>_<signal>` (e.g. `TIM_ETR_SOURCE_TIM1_ADC1_AWD1`) from the tables "Interconnect to the tim_etr input multiplexer" (footnotes: COMPx / ADC3 / ADC2 watchdogs of TIM3 / USB SOF / PLAY only on STM32H543 / H553, SAI only on STM32H562 / H563 / H573, group macros `TIM_DEVICES_H543_H553` / `TIM_DEVICES_H562_H563_H573`)
+of RM0481, RM0492, RM0517; the signals of a peripheral only with the peripheral.
+
+The source of a timer channel input (`tim_InputSource_t`, `Tim_Set_InputSource()` / `Tim_Get_InputSource()`) is a list
+in the same way: `TIM_INPUT_SOURCE_<timer>_CH<n>_PIN` (the channel input pin) and
+`TIM_INPUT_SOURCE_<timer>_CH<n>_<signal>` (e.g. `TIM_INPUT_SOURCE_TIM2_CH1_COMP1_OUT`) from the tables "Interconnect to the tim_tiX input
+multiplexer" of RM0481, RM0492, RM0517; the signals of a peripheral only with the peripheral. The functions refuse an item of another timer or channel.
+
+---
+
 ## ⚙️ Typical Usage Example
 
 ```c

@@ -87,8 +87,32 @@ static void                 Ut_Tim_ErrorCallback        ( tim_ErrorMask_t errorM
 /** Count of channels with capture / compare interrupt callback */
 #define UT_TIM_CC_CALLBACK_CNT              ( 4u )
 
-/** Invalid trigger input (all TS bits set, not a valid selection) */
-#define UT_TIM_INVALID_TRIGGER              ( (tim_ExtClkSource_t)TIM_SMCR_TS )
+/** Invalid trigger input (item of the general purpose timer with a code that is not an SMCR.TS selection) */
+#define UT_TIM_INVALID_TRIGGER              ( (tim_ExtClkSource_t)TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, 0x0Fu ) )
+
+/** Trigger input of another timer (TI1FP1 of TIM1) - refused for the general purpose timer */
+#define UT_TIM_FOREIGN_TRIGGER              ( TIM_TRIGGER_INPUT_TIM1_TI1FP1 )
+
+/** Trigger inputs TI1FP1 / TI2FP2 of the general purpose timer of the tests (valid on every device) */
+#define UT_TIM_GP_TRG_TI1FP1                ( TIM_TRIGGER_INPUT_TIM3_TI1FP1 )
+#define UT_TIM_GP_TRG_TI2FP2                ( TIM_TRIGGER_INPUT_TIM3_TI2FP2 )
+
+/** ETR source of TIM2 with a code above the ETRSEL field - not a valid selection */
+#define UT_TIM_INVALID_ETR_SOURCE           ( (tim_EtrSource_t)TIM_ETR_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_2, ( TIM1_AF1_ETRSEL_Msk >> TIM1_AF1_ETRSEL_Pos ) + 1u ) )
+
+#if defined(TIM15)
+/** Timer, channel 1 pin and the source with TISEL code 1 used by the input source tests */
+#define UT_TIM_IS_PERIPH                    ( TIM_PERIPH_15 )
+#define UT_TIM_IS_REG                       ( TIM15 )
+#define UT_TIM_IS_PIN                       ( TIM_INPUT_SOURCE_TIM15_CH1_PIN )
+#define UT_TIM_IS_ITEM                      ( TIM_INPUT_SOURCE_TIM15_CH1_TIM2_CH1 )
+#else
+/** Timer, channel 1 pin and the source with TISEL code 1 used by the input source tests */
+#define UT_TIM_IS_PERIPH                    ( TIM_PERIPH_2 )
+#define UT_TIM_IS_REG                       ( TIM2 )
+#define UT_TIM_IS_PIN                       ( TIM_INPUT_SOURCE_TIM2_CH1_PIN )
+#define UT_TIM_IS_ITEM                      ( TIM_INPUT_SOURCE_TIM2_CH1_LSI )
+#endif /* TIM15 */
 
 /** Invalid input polarity (CCxNP without CCxP) */
 #define UT_TIM_INVALID_IC_POLARITY          ( (tim_InputPolarity_t)TIM_CCER_CC1NP )
@@ -1154,7 +1178,7 @@ void Ut_Tim_Set_ClockSource_ExternalInput_WritesTriggerAndSlaveMode( void )
 {
     tim_ClockSource_t clockSource = TIM_CLOCKSOURCE_INT_CLK;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_EXT_CLK_SOURCE_TI1FP1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, UT_TIM_GP_TRG_TI1FP1 ) );
 
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1FP1,             TIM3->SMCR & TIM_SMCR_TS );
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_CLOCKSOURCE_EXT_MODE1, TIM3->SMCR & TIM_SMCR_SMS );
@@ -1176,7 +1200,7 @@ void Ut_Tim_Set_ClockSource_Etr_WritesEce( void )
 {
     tim_ClockSource_t clockSource = TIM_CLOCKSOURCE_INT_CLK;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_TRIGGER_INPUT_UNUSED ) );
 
     TEST_ASSERT_EQUAL_HEX32( TIM_SMCR_ECE, TIM3->SMCR );
 
@@ -1199,7 +1223,7 @@ void Ut_Tim_Set_ClockSource_Internal_ClearsExternalClock( void )
 
     TIM3->SMCR = TIM_SMCR_ECE | LL_TIM_CLOCKSOURCE_EXT_MODE1;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_INT_CLK, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_INT_CLK, TIM_TRIGGER_INPUT_UNUSED ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
 
@@ -1218,8 +1242,8 @@ void Ut_Tim_Set_ClockSource_Internal_ClearsExternalClock( void )
  */
 void Ut_Tim_Set_ClockSource_NotAvailableOnBasicTimer_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_ETR,   TIM_EXT_CLK_SOURCE_ITR0 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_EXT_CLK_SOURCE_TI1FP1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_ETR,   TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_TRIGGER_INPUT_UNUSED ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->SMCR );
 }
@@ -1237,8 +1261,10 @@ void Ut_Tim_Set_ClockSource_NotAvailableOnBasicTimer_ReturnsErrorWithoutWrite( v
 void Ut_Tim_Set_ClockSource_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, UT_TIM_INVALID_TRIGGER ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, (tim_ClockSource_t)TIM_SMCR_SMS_3, TIM_EXT_CLK_SOURCE_ITR0 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_CNT, TIM_CLOCKSOURCE_INT_CLK, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, UT_TIM_FOREIGN_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, (tim_ClockSource_t)TIM_SMCR_SMS_3, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_CNT, TIM_CLOCKSOURCE_INT_CLK, TIM_TRIGGER_INPUT_UNUSED ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
 }
@@ -1256,7 +1282,7 @@ void Ut_Tim_Set_ClockSource_RunningTimer_ReturnsErrorWithoutWrite( void )
 {
     TIM3->CR1 = TIM_CR1_CEN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_TRIGGER_INPUT_UNUSED ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
 }
@@ -1500,11 +1526,11 @@ void Ut_Tim_InitBase_ExternalEtrClock_FreeRunningCounter( void )
 /**
  * \brief   Tim_InitBase() configures slave mode, master trigger and counter options.
  *
- * \details TIM3 in reset slave mode with trigger ITR1, master trigger update,
+ * \details TIM3 in reset slave mode with trigger TI2FP2, master trigger update,
  *          down-counting and auto-reload preload.
  *
  * \par Expected results
- * - SMCR.TS = ITR1, SMCR.SMS = reset mode, CR2.MMS = update.
+ * - SMCR.TS = TI2FP2, SMCR.SMS = reset mode, CR2.MMS = update.
  * - CR1 = DIR | ARPE.
  */
 void Ut_Tim_InitBase_SlaveModeAndMasterTrigger_ConfiguresSynchronization( void )
@@ -1512,7 +1538,7 @@ void Ut_Tim_InitBase_SlaveModeAndMasterTrigger_ConfiguresSynchronization( void )
     tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
 
     config.SlaveMode         = TIM_SLAVE_MODE_RESET;
-    config.SlaveTriggerInput = TIM_EXT_CLK_SOURCE_ITR1;
+    config.SlaveTriggerInput = UT_TIM_GP_TRG_TI2FP2;
     config.MasterTrigger     = TIM_MASTER_TRIGGER_UPDATE;
     config.CounterDirection  = TIM_COUNTER_DIR_DOWN;
     config.AutoreloadPreloadState = TIM_FUNCTION_ACTIVE;
@@ -1520,7 +1546,7 @@ void Ut_Tim_InitBase_SlaveModeAndMasterTrigger_ConfiguresSynchronization( void )
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBase( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR1,         TIM3->SMCR & TIM_SMCR_TS );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2,         TIM3->SMCR & TIM_SMCR_TS );
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_SLAVEMODE_RESET, TIM3->SMCR & TIM_SMCR_SMS );
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_TRGO_UPDATE,     TIM3->CR2 & TIM_CR2_MMS );
     TEST_ASSERT_EQUAL_HEX32( TIM_CR1_DIR | TIM_CR1_ARPE, TIM3->CR1 );
@@ -1542,9 +1568,9 @@ void Ut_Tim_InitBase_SlaveModeWithExternalInputClock_ReturnsError( void )
 
     /* Slave mode and external clock mode 1 share SMS field */
     config.ClockSource       = TIM_CLOCKSOURCE_EXTERNAL_CH_IN;
-    config.ExtClockSource    = TIM_EXT_CLK_SOURCE_TI1FP1;
+    config.ExtClockSource    = UT_TIM_GP_TRG_TI1FP1;
     config.SlaveMode         = TIM_SLAVE_MODE_GATED;
-    config.SlaveTriggerInput = TIM_EXT_CLK_SOURCE_ITR1;
+    config.SlaveTriggerInput = UT_TIM_GP_TRG_TI2FP2;
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
@@ -2333,38 +2359,38 @@ void Ut_Tim_Set_MasterSlaveMode_TogglesMsm( void )
 /**
  * \brief   Gated slave mode with trigger input is written and read back.
  *
- * \details Sets TIM3 gated slave mode with trigger ITR1 and reads it back.
+ * \details Sets TIM3 gated slave mode with trigger TI2FP2 and reads it back.
  *
  * \par Expected results
- * - SMCR = TS ITR1 | SMS gated.
- * - Slave mode gated and trigger ITR1 read back.
+ * - SMCR = TS TI2FP2 | SMS gated.
+ * - Slave mode gated and trigger TI2FP2 read back.
  */
 void Ut_Tim_Set_SlaveMode_Gated_WritesTriggerAndMode( void )
 {
     tim_SlaveMode_t    slaveMode    = TIM_SLAVE_MODE_DISABLE;
-    tim_TriggerInput_t triggerInput = TIM_EXT_CLK_SOURCE_ITR0;
+    tim_TriggerInput_t triggerInput = TIM_TRIGGER_INPUT_UNUSED;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_GATED, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_GATED, UT_TIM_GP_TRG_TI2FP2 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR1 | LL_TIM_SLAVEMODE_GATED, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_GATED, TIM3->SMCR );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_SlaveMode( TIM_PERIPH_3, &slaveMode, &triggerInput ) );
     TEST_ASSERT_EQUAL( TIM_SLAVE_MODE_GATED, slaveMode );
-    TEST_ASSERT_EQUAL( TIM_EXT_CLK_SOURCE_ITR1, triggerInput );
+    TEST_ASSERT_EQUAL( UT_TIM_GP_TRG_TI2FP2, triggerInput );
 }
 
 
 /**
  * \brief   Disabled slave mode clears SMS without trigger validation.
  *
- * \details SMCR = ITR1 | gated, sets slave mode disabled with invalid trigger input.
+ * \details SMCR = TI2FP2 | gated, sets slave mode disabled with invalid trigger input.
  *
  * \par Expected results
  * - TIM_REQUEST_OK, SMCR.SMS = 0.
  */
 void Ut_Tim_Set_SlaveMode_Disable_ClearsSlaveMode( void )
 {
-    TIM3->SMCR = LL_TIM_TS_ITR1 | LL_TIM_SLAVEMODE_GATED;
+    TIM3->SMCR = LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_GATED;
 
     /* Trigger input is not used (not validated) when slave mode is disabled */
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_DISABLE, UT_TIM_INVALID_TRIGGER ) );
@@ -2385,10 +2411,12 @@ void Ut_Tim_Set_SlaveMode_Disable_ClearsSlaveMode( void )
 void Ut_Tim_Set_SlaveMode_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
     /* External clock mode is configured by Tim_Set_ClockSource */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_EXTERNAL_CLOCK, TIM_EXT_CLK_SOURCE_ITR1 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_CNT, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_EXTERNAL_CLOCK, UT_TIM_GP_TRG_TI2FP2 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_CNT, UT_TIM_GP_TRG_TI2FP2 ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_RESET, UT_TIM_INVALID_TRIGGER ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_6, TIM_SLAVE_MODE_RESET, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_RESET, UT_TIM_FOREIGN_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_RESET, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_6, TIM_SLAVE_MODE_RESET, UT_TIM_GP_TRG_TI2FP2 ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->SMCR );
@@ -2407,9 +2435,80 @@ void Ut_Tim_Set_SlaveMode_RunningTimer_ReturnsErrorWithoutWrite( void )
 {
     TIM3->CR1 = TIM_CR1_CEN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_TRIGGER, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_TRIGGER, UT_TIM_GP_TRG_TI2FP2 ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+}
+
+/**
+ * \brief   Internal trigger input of a timer is written and read back.
+ *
+ * \details SMCR.TS = TI1FP1, sets reset slave mode of TIM2 ITR0 (TIM1 TRGO) and reads it back.
+ *
+ * \par Expected results
+ * - SMCR = TS code of the input | SMS reset.
+ * - Slave mode reset and the trigger input item read back.
+ */
+void Ut_Tim_Set_SlaveMode_InternalTrigger_WritesTsOfTimer( void )
+{
+    tim_SlaveMode_t    slaveMode    = TIM_SLAVE_MODE_DISABLE;
+    tim_TriggerInput_t triggerInput = TIM_TRIGGER_INPUT_UNUSED;
+
+    TIM2->SMCR = LL_TIM_TS_TI1FP1;
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_2, TIM_SLAVE_MODE_RESET, TIM_TRIGGER_INPUT_TIM2_ITR0_TIM1_TRGO ) );
+
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR0 | LL_TIM_SLAVEMODE_RESET, TIM2->SMCR );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_SlaveMode( TIM_PERIPH_2, &slaveMode, &triggerInput ) );
+    TEST_ASSERT_EQUAL( TIM_SLAVE_MODE_RESET, slaveMode );
+    TEST_ASSERT_EQUAL( TIM_TRIGGER_INPUT_TIM2_ITR0_TIM1_TRGO, triggerInput );
+}
+
+
+/**
+ * \brief   Internal trigger inputs of other timers are written.
+ *
+ * \details Sets the trigger inputs of TIM2 from TIM3 TRGO (ITR2, gated) and from TIM12 TRGO (ITR6, trigger mode - TS[4:3] bit) on the devices with the timers, otherwise the test is
+ *          ignored.
+ *
+ * \par Expected results
+ * - SMCR = TS code of the input | SMS of the mode.
+ */
+void Ut_Tim_Set_SlaveMode_InternalTriggerOfOtherTimers_WritesTs( void )
+{
+#if defined(TIM12)
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_2, TIM_SLAVE_MODE_DISABLE, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_2, TIM_SLAVE_MODE_GATED, TIM_TRIGGER_INPUT_TIM2_ITR2_TIM3_TRGO ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR2 | LL_TIM_SLAVEMODE_GATED, TIM2->SMCR );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_2, TIM_SLAVE_MODE_DISABLE, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_2, TIM_SLAVE_MODE_TRIGGER, TIM_TRIGGER_INPUT_TIM2_ITR6_TIM12_TRGO ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR6 | LL_TIM_SLAVEMODE_TRIGGER, TIM2->SMCR );
+#else
+    TEST_IGNORE_MESSAGE( "The device lacks the timers of the connections" );
+#endif
+}
+
+
+/**
+ * \brief   Trigger input of the slave mode is not reported while the slave mode is disabled.
+ *
+ * \details SMCR.TS = TI2FP2 with slave mode disabled, reads the slave mode.
+ *
+ * \par Expected results
+ * - Slave mode disabled, trigger input TIM_TRIGGER_INPUT_UNUSED.
+ */
+void Ut_Tim_Get_SlaveMode_Disabled_ReportsUnusedTrigger( void )
+{
+    tim_SlaveMode_t    slaveMode    = TIM_SLAVE_MODE_GATED;
+    tim_TriggerInput_t triggerInput = UT_TIM_GP_TRG_TI2FP2;
+
+    TIM3->SMCR = LL_TIM_TS_TI2FP2;
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_SlaveMode( TIM_PERIPH_3, &slaveMode, &triggerInput ) );
+    TEST_ASSERT_EQUAL( TIM_SLAVE_MODE_DISABLE, slaveMode );
+    TEST_ASSERT_EQUAL( TIM_TRIGGER_INPUT_UNUSED, triggerInput );
 }
 
 /* ============================= CHANNEL MODE =============================== */
@@ -3275,26 +3374,53 @@ void Ut_Tim_Get_InputPwm_NoPeriodCaptured_ReturnsError( void )
 /**
  * \brief   Input source is written to TISEL and read back.
  *
- * \details Sets TIM2 channel 4 input source 15 and reads it back, then sets source out
- *          of range and source of TIM1 channel 5.
+ * \details Sets the input 1 of TIM2 (LSI on STM32H503) as source of TIM15 (TIM2 on STM32H503) channel 1 and reads it back, then sets the
+ *          channel input pin.
  *
  * \par Expected results
- * - TISEL = TI4SEL (all bits), source reads back 15.
- * - Invalid arguments: TIM_REQUEST_ERROR.
+ * - TISEL.TI1SEL = 1, the item UT_TIM_IS_ITEM reads back.
+ * - Pin: TISEL = 0, the item UT_TIM_IS_PIN reads back.
  */
 void Ut_Tim_Set_InputSource_WritesTisel( void )
 {
-    tim_InputSource_t inputSource = TIM_INPUT_SOURCE_PIN;
+    tim_InputSource_t inputSource = UT_TIM_IS_PIN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_2, TIM_CHANNEL_4, TIM_INPUT_SOURCE_15 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, UT_TIM_IS_ITEM ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_TISEL_TI4SEL, TIM2->TISEL );
+    TEST_ASSERT_EQUAL_HEX32( 1u << TIM_TISEL_TI1SEL_Pos, UT_TIM_IS_REG->TISEL );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputSource( TIM_PERIPH_2, TIM_CHANNEL_4, &inputSource ) );
-    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_15, inputSource );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, &inputSource ) );
+    TEST_ASSERT_EQUAL( UT_TIM_IS_ITEM, inputSource );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_2, TIM_CHANNEL_1, TIM_INPUT_SOURCE_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_1, TIM_CHANNEL_5, TIM_INPUT_SOURCE_1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, UT_TIM_IS_PIN ) );
+
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_IS_REG->TISEL );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, &inputSource ) );
+    TEST_ASSERT_EQUAL( UT_TIM_IS_PIN, inputSource );
+}
+
+
+/**
+ * \brief   Input sources of other timers / channels and invalid arguments are refused.
+ *
+ * \details Sets the source of TIM1 channel 1 for TIM15 (TIM2 on STM32H503), the source of TIM15 (TIM2 on STM32H503) channel 1 for channel 2, a
+ *          selection code out of the TISEL field, a channel without input stage, a timer without channels and
+ *          reads the source with NULL pointer.
+ *
+ * \par Expected results
+ * - All calls: TIM_REQUEST_ERROR, TISEL of TIM15 (TIM2 on STM32H503) stays 0.
+ */
+void Ut_Tim_Set_InputSource_InvalidArgs_ReturnsErrorWithoutWrite( void )
+{
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, TIM_INPUT_SOURCE_TIM1_CH1_PIN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_2, UT_TIM_IS_PIN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, (tim_InputSource_t)TIM_INPUT_SOURCE_BIT_MASK_ENCODE( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, 16u ) ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_1, TIM_CHANNEL_5, TIM_INPUT_SOURCE_TIM1_CH1_PIN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_6, TIM_CHANNEL_1, (tim_InputSource_t)TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_6, TIM_CHANNEL_1, 0u ) ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_InputSource( UT_TIM_IS_PERIPH, TIM_CHANNEL_1, NULL ) );
+
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_IS_REG->TISEL );
 }
 
 
@@ -4131,20 +4257,46 @@ void Ut_Tim_Set_EtrConfig_InvalidArgs_ReturnsErrorWithoutWrite( void )
 /**
  * \brief   ETR source is written to ETRSEL.
  *
- * \details Sets TIM2 ETR source 3, then source out of range and source of TIM6.
+ * \details Sets the LSE as ETR source of TIM2, then the ETR pin, the source of another
+ *          timer, a source with a code above the ETRSEL field and a source of TIM6.
  *
  * \par Expected results
- * - AF1.ETRSEL = 3.
- * - Invalid arguments: TIM_REQUEST_ERROR.
+ * - AF1.ETRSEL = 3 (the LSE), then 0 (ETR pin).
+ * - Invalid arguments: TIM_REQUEST_ERROR, AF1 unchanged.
  */
 void Ut_Tim_Set_EtrSource_WritesEtrsel( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_TIM2_LSE ) );
+    TEST_ASSERT_EQUAL_HEX32( 3u << TIM1_AF1_ETRSEL_Pos, TIM2->AF1 & TIM1_AF1_ETRSEL_Msk );
 
-    TEST_ASSERT_EQUAL_HEX32( (uint32_t)TIM_ETR_SOURCE_3 << TIM1_AF1_ETRSEL_Pos, TIM2->AF1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_TIM1_PIN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( TIM_PERIPH_2, UT_TIM_INVALID_ETR_SOURCE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( TIM_PERIPH_6, TIM_ETR_SOURCE_TIM2_LSE ) );
+    TEST_ASSERT_EQUAL_HEX32( 3u << TIM1_AF1_ETRSEL_Pos, TIM2->AF1 & TIM1_AF1_ETRSEL_Msk );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( TIM_PERIPH_6, TIM_ETR_SOURCE_1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_TIM2_PIN ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, TIM2->AF1 & TIM1_AF1_ETRSEL_Msk );
+}
+
+
+/**
+ * \brief   ETR sources that are internal signals of the device are written to ETRSEL.
+ *
+ * \details Sets the analog watchdog 1 of ADC1 as ETR source of TIM1, the LSE of TIM2 and the ETR of TIM2 as ETR source of TIM3.
+ *
+ * \par Expected results
+ * - AF1.ETRSEL of each timer = code of the source.
+ */
+void Ut_Tim_Set_EtrSource_InternalSignals_WritesEtrsel( void )
+{
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrSource( TIM_PERIPH_1, TIM_ETR_SOURCE_TIM1_ADC1_AWD1 ) );
+    TEST_ASSERT_EQUAL_HEX32( 3u << TIM1_AF1_ETRSEL_Pos, TIM1->AF1 & TIM1_AF1_ETRSEL_Msk );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_TIM2_LSE ) );
+    TEST_ASSERT_EQUAL_HEX32( 3u << TIM1_AF1_ETRSEL_Pos, TIM2->AF1 & TIM1_AF1_ETRSEL_Msk );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrSource( TIM_PERIPH_3, TIM_ETR_SOURCE_TIM3_TIM2_ETR ) );
+    TEST_ASSERT_EQUAL_HEX32( 8u << TIM1_AF1_ETRSEL_Pos, TIM3->AF1 & TIM1_AF1_ETRSEL_Msk );
 }
 
 /* ======================= DITHERING, UIF REMAPPING ========================= */
@@ -4299,6 +4451,170 @@ void Ut_Tim_InitTriggerAndBreakGpio_ConfiguresAlternateFunction( void )
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitTriggerEventGpio( TIM_1_ETR_PA12 ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBreakInputGpio( TIM_1_BKIN_PB12 ) );
+}
+
+/**
+ * \brief   Interrupt handler of every interrupt line processes its own timer.
+ *
+ * \details For every NVIC line of the timers of the MCU: the callback and the interrupt of
+ *          the timer are enabled, the flag is set and the ISR captured from the NVIC line is
+ *          called. TIM1 / TIM8 have dedicated lines (break, update, trigger / commutation,
+ *          capture / compare), the other timers one global line.
+ *
+ * \par Expected results
+ * - ISR registered for the NVIC line of the timer interrupt.
+ * - Callback of the interrupt called once, flag of the interrupt cleared (break 2 flag not checked:
+ *   RAM status register does not model rc_w0 clearing of break flags sharing one enable bit).
+ */
+void Ut_Tim_Isr_EveryLine_OwnTimerProcessed( void )
+{
+    const struct
+    {
+        tim_PeriphId_t        PeriphId;
+        TIM_TypeDef *         PeriphReg;
+        tim_IrqId_t           IrqId;
+        nvic_PeriphIrqList_t  NvicIrqId;
+        uint32_t              SrFlag;
+    }   lineLut[] =
+    {
+        { TIM_PERIPH_1,  TIM1,  TIM_IRQ_BREAK2,               NVIC_PERIPH_IRQ_TIM1_BRK,      TIM_SR_B2IF  },
+        { TIM_PERIPH_1,  TIM1,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM1_UP,       TIM_SR_UIF   },
+        { TIM_PERIPH_1,  TIM1,  TIM_IRQ_TRIGGER,              NVIC_PERIPH_IRQ_TIM1_TRG_COM,  TIM_SR_TIF   },
+        { TIM_PERIPH_1,  TIM1,  TIM_IRQ_CAPTURE_COMPARE_CH1,  NVIC_PERIPH_IRQ_TIM1_CC,       TIM_SR_CC1IF },
+#ifdef TIM2
+        { TIM_PERIPH_2,  TIM2,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM2,          TIM_SR_UIF   },
+#endif
+#ifdef TIM3
+        { TIM_PERIPH_3,  TIM3,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM3,          TIM_SR_UIF   },
+#endif
+#ifdef TIM4
+        { TIM_PERIPH_4,  TIM4,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM4,          TIM_SR_UIF   },
+#endif
+#ifdef TIM5
+        { TIM_PERIPH_5,  TIM5,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM5,          TIM_SR_UIF   },
+#endif
+#ifdef TIM6
+        { TIM_PERIPH_6,  TIM6,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM6,          TIM_SR_UIF   },
+#endif
+#ifdef TIM7
+        { TIM_PERIPH_7,  TIM7,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM7,          TIM_SR_UIF   },
+#endif
+#ifdef TIM8
+        { TIM_PERIPH_8,  TIM8,  TIM_IRQ_BREAK2,               NVIC_PERIPH_IRQ_TIM8_BRK,      TIM_SR_B2IF  },
+        { TIM_PERIPH_8,  TIM8,  TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM8_UP,       TIM_SR_UIF   },
+        { TIM_PERIPH_8,  TIM8,  TIM_IRQ_TRIGGER,              NVIC_PERIPH_IRQ_TIM8_TRG_COM,  TIM_SR_TIF   },
+        { TIM_PERIPH_8,  TIM8,  TIM_IRQ_CAPTURE_COMPARE_CH1,  NVIC_PERIPH_IRQ_TIM8_CC,       TIM_SR_CC1IF },
+#endif
+#ifdef TIM12
+        { TIM_PERIPH_12, TIM12, TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM12,         TIM_SR_UIF   },
+#endif
+#ifdef TIM13
+        { TIM_PERIPH_13, TIM13, TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM13,         TIM_SR_UIF   },
+#endif
+#ifdef TIM14
+        { TIM_PERIPH_14, TIM14, TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM14,         TIM_SR_UIF   },
+#endif
+#ifdef TIM15
+        { TIM_PERIPH_15, TIM15, TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM15,         TIM_SR_UIF   },
+#endif
+#ifdef TIM16
+        { TIM_PERIPH_16, TIM16, TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM16,         TIM_SR_UIF   },
+#endif
+#ifdef TIM17
+        { TIM_PERIPH_17, TIM17, TIM_IRQ_UPDATE,               NVIC_PERIPH_IRQ_TIM17,         TIM_SR_UIF   },
+#endif
+    };
+
+    for( uint32_t idx = 0u; ( sizeof( lineLut ) / sizeof( lineLut[ 0u ] ) ) > idx; idx++ )
+    {
+        const tim_PeriphId_t periphId = lineLut[ idx ].PeriphId;
+
+        TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( periphId, Ut_Tim_UpdateCallback ) );
+        TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_TriggerCallback( periphId, Ut_Tim_TriggerCallback ) );
+
+        if( TIM_IRQ_CAPTURE_COMPARE_CH1 == lineLut[ idx ].IrqId )
+        {
+            TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( periphId, TIM_CHANNEL_1, Ut_Tim_CaptureCompareCallback ) );
+        }
+        else
+        {
+            /* Interrupt without capture / compare callback */
+        }
+
+        if( TIM_IRQ_BREAK2 == lineLut[ idx ].IrqId )
+        {
+            TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Break2Callback( periphId, Ut_Tim_Break2Callback ) );
+        }
+        else
+        {
+            /* Interrupt without break 2 callback */
+        }
+
+        Ut_Tim_Enable_Irq( periphId, lineLut[ idx ].IrqId, lineLut[ idx ].NvicIrqId );
+
+        utTim_UpdateCnt         = 0u;
+        utTim_TriggerCnt        = 0u;
+        utTim_Break2Cnt         = 0u;
+        utTim_CaptureCompareCnt = 0u;
+        lineLut[ idx ].PeriphReg->SR = lineLut[ idx ].SrFlag;
+
+        utTim_Isr[ lineLut[ idx ].NvicIrqId ]();
+
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE( 1u, utTim_UpdateCnt + utTim_TriggerCnt + utTim_Break2Cnt + utTim_CaptureCompareCnt,
+                                          "One callback of the interrupt" );
+        if( TIM_IRQ_BREAK2 != lineLut[ idx ].IrqId )
+        {
+            TEST_ASSERT_EQUAL_HEX32( 0u, lineLut[ idx ].PeriphReg->SR & lineLut[ idx ].SrFlag );
+        }
+        else
+        {
+            /* RAM SR: clearing B2IF (write ~B2IF) sets SBIF, system break (same BIE) is processed
+               next and its clear (write ~SBIF) sets B2IF again - rc_w0 hardware keeps it cleared */
+        }
+
+        lineLut[ idx ].PeriphReg->DIER = 0u;
+    }
+}
+
+
+/**
+ * \brief   Break input 2 pin is configured in alternate function mode.
+ *
+ * \details Initializes the break input 2 pin of TIM1 (PE6, STM32H503: PB8).
+ *
+ * \par Expected results
+ * - Gpio_Init() called for the pin with alternate function 1, push-pull, no pull, medium speed.
+ * - TIM_REQUEST_OK is returned.
+ */
+void Ut_Tim_InitBreakInput2Gpio_ConfiguresAlternateFunction( void )
+{
+#if defined(STM32H503xx)
+    Ut_Tim_Expect_GpioInit( GPIO_PORT_B, GPIO_PIN_ID_8, GPIO_ALT_FUNC_1, GPIO_REQUEST_OK );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBreakInput2Gpio( TIM_1_BKIN2_PB8 ) );
+#else
+    Ut_Tim_Expect_GpioInit( GPIO_PORT_E, GPIO_PIN_ID_6, GPIO_ALT_FUNC_1, GPIO_REQUEST_OK );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBreakInput2Gpio( TIM_1_BKIN2_PE6 ) );
+#endif
+}
+
+
+/**
+ * \brief   Break input 2 pin configuration reports GPIO error.
+ *
+ * \details Gpio_Init() returns error.
+ *
+ * \par Expected results
+ * - TIM_REQUEST_ERROR is returned.
+ */
+void Ut_Tim_InitBreakInput2Gpio_GpioError_ReturnsError( void )
+{
+#if defined(STM32H503xx)
+    Ut_Tim_Expect_GpioInit( GPIO_PORT_B, GPIO_PIN_ID_8, GPIO_ALT_FUNC_1, GPIO_REQUEST_ERROR );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBreakInput2Gpio( TIM_1_BKIN2_PB8 ) );
+#else
+    Ut_Tim_Expect_GpioInit( GPIO_PORT_E, GPIO_PIN_ID_6, GPIO_ALT_FUNC_1, GPIO_REQUEST_ERROR );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBreakInput2Gpio( TIM_1_BKIN2_PE6 ) );
+#endif
 }
 
 /* =========================== LOCAL FUNCTIONS ============================== */

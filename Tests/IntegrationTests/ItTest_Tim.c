@@ -50,14 +50,20 @@ static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag
 /* ========================= SYMBOLIC CONSTANTS ============================= */
 
 /*----------------------------- Board configuration --------------------------*/
-#if defined(IT_BOARD_NUCLEO_H503RB) || defined(IT_BOARD_NUCLEO_H533RE)
+/* Boards are named by their MCU (IT_BOARD_<MCU>, name of the board from the detection) */
+#if defined(IT_BOARD_STM32H503xB) || \
+    defined(IT_BOARD_STM32H523xE) || \
+    defined(IT_BOARD_STM32H533xE)
 
     /** Arduino D7 (PA8, TIM1_CH1) - not connected on the board */
     #define IT_TIM_PWM_PIN                  ( TIM_1_CH1_PA8 )
     #define IT_TIM_PWM_PORT                 ( GPIO_PORT_A )
     #define IT_TIM_PWM_PIN_ID               ( GPIO_PIN_ID_8 )
 
-#elif defined(IT_BOARD_NUCLEO_H563ZI) || defined(IT_BOARD_NUCLEO_H5E5ZJ)
+#elif defined(IT_BOARD_STM32H562xI) || \
+      defined(IT_BOARD_STM32H563xI) || \
+      defined(IT_BOARD_STM32H573xI) || \
+      defined(IT_BOARD_STM32H5E5xJ)
 
     /** Arduino D6 (PE9, TIM1_CH1) - not connected on the board */
     #define IT_TIM_PWM_PIN                  ( TIM_1_CH1_PE9 )
@@ -80,7 +86,7 @@ static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag
 #define IT_TIM_SLAVE                        ( TIM_PERIPH_3 )
 
 /** Trigger input of IT_TIM_SLAVE connected to TRGO of IT_TIM_REF (TIM3 ITR1 = TIM2_TRGO) */
-#define IT_TIM_SLAVE_ITR                    ( TIM_EXT_CLK_SOURCE_ITR1 )
+#define IT_TIM_SLAVE_ITR                    ( TIM_TRIGGER_INPUT_TIM3_ITR1_TIM2_TRGO )
 
 /** Basic timer */
 #define IT_TIM_BASIC                        ( TIM_PERIPH_6 )
@@ -854,7 +860,7 @@ void It_Tim_Set_SlaveMode_TriggerFromMasterEnable_SlaveStartsWithMaster( void )
     tim_PeriphConfig_t  timConfig;
     tim_FunctionState_t periphState = TIM_FUNCTION_ACTIVE;
     tim_SlaveMode_t     slaveMode   = TIM_SLAVE_MODE_DISABLE;
-    tim_TriggerInput_t  triggerIn   = TIM_EXT_CLK_SOURCE_ITR0;
+    tim_TriggerInput_t  triggerIn   = TIM_TRIGGER_INPUT_UNUSED;
     tim_Counter_t       counter     = 0u;
 
     /* Master: counter enable is used as trigger output */
