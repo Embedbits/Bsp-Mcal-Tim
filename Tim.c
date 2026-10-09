@@ -297,7 +297,7 @@ typedef struct
 /** Register bit(s) cleared (enable bit read-back value of disabled function) */
 #define TIM_REG_BIT_CLEARED         ( 0u )
 
-/** Count of input sources with remap (\ref TIM_INPUT_SOURCE_PIN - \ref TIM_INPUT_SOURCE_3) */
+/** Count of selection codes of the input remap fields (field values 0 - 3) */
 #define TIM_INPUT_REMAP_SOURCE_CNT  ( 4u )
 
 /** NVIC line of TIM1 update interrupt (shared with TIM10 on devices with TIM10) */
@@ -329,7 +329,7 @@ typedef struct
 
 static tim_RequestState_t Tim_Calc_StepTime( tim_PeriphId_t periphId, uint32_t clkDivider, tim_Time_ns_t * const stepTime );
 static tim_RequestState_t Tim_Check_OutputId( tim_PeriphId_t periphId, tim_OutputId_t outputId );
-static tim_RequestState_t Tim_Check_ExtClkSource( tim_ExtClkSource_t extClkSource );
+static tim_RequestState_t Tim_Check_TriggerInput( tim_PeriphId_t periphId, tim_ExtClkSource_t triggerInput );
 static tim_FunctionState_t Tim_Conv_RawToFunctionState( uint32_t rawState );
 static tim_RequestState_t Tim_Config_CounterDirection( tim_PeriphId_t periphId, tim_CounterDir_t counterDir );
 static tim_RequestState_t Tim_Config_UpdateEvent( tim_PeriphId_t periphId, tim_FunctionState_t eventState );
@@ -354,6 +354,7 @@ static tim_RequestState_t Tim_Config_InputChannel( tim_PeriphId_t periphId, tim_
                                                    tim_InputPolarity_t inputPolarity, tim_InputFilter_t inputFilter,
                                                    tim_InputPrescaler_t inputPrescaler );
 static const tim_InputRemapConfig_t * Tim_Get_InputRemap( tim_PeriphId_t periphId, tim_ChannelId_t channelId );
+static tim_RequestState_t Tim_Check_InputSource( tim_PeriphId_t periphId, tim_ChannelId_t channelId, tim_InputSource_t inputSource );
 static tim_RequestState_t Tim_Calc_DeadTimeReg( tim_PeriphId_t periphId, tim_Time_ns_t deadTime, uint32_t * const dtgReg );
 static tim_RequestState_t Tim_Check_BreakConfig( tim_PeriphId_t periphId, const tim_BreakConfig_t * const breakConfig );
 static tim_RequestState_t Tim_Config_AutomaticOutput( tim_PeriphId_t periphId, tim_FunctionState_t outputState );
@@ -400,6 +401,12 @@ static void Tim_Tim8_CaptureCompare_IsrHandler( void );
 #endif
 
 /* =============================== MACROS =================================== */
+
+/** Trigger input item of the timer PERIPH_ID for the SMCR.TS code TS_CODE (inputs TI1F_ED, TI1FP1, TI2FP2 of the timer itself) */
+#define TIM_TRIGGER_INPUT_OF(PERIPH_ID,TS_CODE)  ( (tim_TriggerInput_t)TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( (uint32_t)( PERIPH_ID ), ( TS_CODE ) ) )
+
+/** Input source item of the timer PERIPH_ID, channel CHANNEL_ID for the selection code SEL_CODE of its input remap field */
+#define TIM_INPUT_SOURCE_OF(PERIPH_ID,CHANNEL_ID,SEL_CODE)  ( (tim_InputSource_t)TIM_INPUT_SOURCE_BIT_MASK_ENCODE( (uint32_t)( PERIPH_ID ), (uint32_t)( CHANNEL_ID ), ( SEL_CODE ) ) )
 
 /* ========================== EXPORTED VARIABLES ============================ */
 
@@ -584,15 +591,15 @@ static const tim_OutputConfig_t         tim_OutputLut[ TIM_OUTPUT_CNT ] =
 };
 
 
-/** Supported trigger inputs usable as external clock source (\ref tim_ExtClkSource_t) */
-static const tim_ExtClkSource_t         tim_ExtClkSourceLut[] =
+/** SMCR.TS codes of the trigger inputs of the device (codes of the items of \ref tim_ExtClkSource_t) */
+static const uint32_t                   tim_TriggerCodeLut[] =
 {
-    TIM_EXT_CLK_SOURCE_ITR0  , TIM_EXT_CLK_SOURCE_ITR1  , TIM_EXT_CLK_SOURCE_ITR2   , TIM_EXT_CLK_SOURCE_ITR3  ,
-    TIM_EXT_CLK_SOURCE_ETR1  , TIM_EXT_CLK_SOURCE_TI1_ED, TIM_EXT_CLK_SOURCE_TI1FP1 , TIM_EXT_CLK_SOURCE_TI2FP2,
+    LL_TIM_TS_ITR0 , LL_TIM_TS_ITR1 , LL_TIM_TS_ITR2 , LL_TIM_TS_ITR3 ,
+    LL_TIM_TS_TI1F_ED , LL_TIM_TS_TI1FP1 , LL_TIM_TS_TI2FP2 , LL_TIM_TS_ETRF ,
 };
 
-/** Count of items in \ref tim_ExtClkSourceLut */
-#define TIM_EXT_CLK_SOURCE_CNT      ( sizeof( tim_ExtClkSourceLut ) / sizeof( tim_ExtClkSourceLut[ 0u ] ) )
+/** Count of items in \ref tim_TriggerCodeLut */
+#define TIM_TRIGGER_CODE_CNT        ( sizeof( tim_TriggerCodeLut ) / sizeof( tim_TriggerCodeLut[ 0u ] ) )
 
 
 /** LL counter mode register values, indexed by \ref tim_CounterDir_t */
@@ -681,8 +688,8 @@ static const uint32_t                   tim_ClockDivLut[ TIM_CLOCK_DIV_CNT ] =
 
 
 /**
- * Input remap (TIMx_OR) of timer channels, values indexed by \ref tim_InputSource_t
- * (\ref TIM_INPUT_SOURCE_PIN - \ref TIM_INPUT_SOURCE_3).
+ * Input remap (TIMx_OR) of timer channels, register values indexed by the selection code of the item of
+ * \ref tim_InputSource_t (value of the remap field 0 - 3).
  */
 static const tim_InputRemapConfig_t     tim_InputRemapLut[] =
 {
@@ -692,12 +699,12 @@ static const tim_InputRemapConfig_t     tim_InputRemapLut[] =
       .SelVal = { 0u, TIM_OR_TI4_RMP_0, TIM_OR_TI4_RMP_1, TIM_OR_TI4_RMP } },
 #endif
 #if defined( TIM11 ) && defined( TIM_OR_TI1_RMP )
-    /* TIM11 channel 1: GPIO, HSE_RTC, SPDIFRX (devices with SPDIFRX) */
+    /* TIM11 channel 1: GPIO, SPDIFRX frame synchronization (devices with SPDIFRX), HSE_RTC */
     { .PeriphReg = TIM11, .ChannelId = TIM_CHANNEL_1, .SelMask = TIM_OR_TI1_RMP,
 #if defined( SPDIFRX )
-      .SelVal = { 0u, TIM_OR_TI1_RMP_1, TIM_OR_TI1_RMP_0, TIM_REG_VAL_UNAVAILABLE } },
+      .SelVal = { 0u, TIM_OR_TI1_RMP_0, TIM_OR_TI1_RMP_1, TIM_REG_VAL_UNAVAILABLE } },
 #else
-      .SelVal = { 0u, TIM_OR_TI1_RMP_1, TIM_REG_VAL_UNAVAILABLE, TIM_REG_VAL_UNAVAILABLE } },
+      .SelVal = { 0u, TIM_REG_VAL_UNAVAILABLE, TIM_OR_TI1_RMP_1, TIM_REG_VAL_UNAVAILABLE } },
 #endif
 #endif
     /* Table end (no timer) */
@@ -1104,9 +1111,9 @@ tim_RequestState_t Tim_Get_DefaultConfig( tim_PeriphConfig_t * const timConfig )
     {
         timConfig->PeriphId                 = TIM_PERIPH_CNT;
         timConfig->ClockSource              = TIM_CLOCKSOURCE_INT_CLK;
-        timConfig->ExtClockSource           = TIM_EXT_CLK_SOURCE_ITR0;
+        timConfig->ExtClockSource           = TIM_TRIGGER_INPUT_UNUSED;
         timConfig->SlaveMode                = TIM_SLAVE_MODE_DISABLE;
-        timConfig->SlaveTriggerInput        = TIM_EXT_CLK_SOURCE_ITR0;
+        timConfig->SlaveTriggerInput        = TIM_TRIGGER_INPUT_UNUSED;
         timConfig->MasterTrigger            = TIM_MASTER_TRIGGER_RESET;
         timConfig->TimerFrequency           = TIM_DEFAULT_TIMER_FREQ_HZ;
         timConfig->AutoreloadPreloadState   = TIM_FUNCTION_INACTIVE;
@@ -2893,7 +2900,7 @@ tim_RequestState_t Tim_Set_SlaveMode( tim_PeriphId_t periphId, tim_SlaveMode_t s
     if( ( TIM_REQUEST_OK         == retState  ) &&
         ( TIM_SLAVE_MODE_DISABLE != slaveMode )    )
     {
-        retState = Tim_Check_ExtClkSource( triggerInput );
+        retState = Tim_Check_TriggerInput( periphId, triggerInput );
     }
     else
     {
@@ -2933,15 +2940,16 @@ tim_RequestState_t Tim_Set_SlaveMode( tim_PeriphId_t periphId, tim_SlaveMode_t s
     if( ( TIM_REQUEST_OK         == retState  ) &&
         ( TIM_SLAVE_MODE_DISABLE != slaveMode )    )
     {
-        TIM_TypeDef * const timReg = tim_PeriphConf[ periphId ].PeriphReg;
+        TIM_TypeDef * const timReg      = tim_PeriphConf[ periphId ].PeriphReg;
+        const uint32_t      triggerCode = TIM_BIT_MASK_DECODE_SELECTION_CODE( triggerInput );
 
-        LL_TIM_SetTriggerInput( timReg, triggerInput );
+        LL_TIM_SetTriggerInput( timReg, triggerCode );
 
         for( uint32_t iterationCnt = 0u; TIM_TIMEOUT_RAW > iterationCnt; iterationCnt ++ )
         {
             const uint32_t regValue = READ_BIT( timReg->SMCR, TIM_SMCR_TS );
 
-            if( (uint32_t)triggerInput == regValue )
+            if( triggerCode == regValue )
             {
                 retState = TIM_REQUEST_OK;
                 break;
@@ -2977,8 +2985,9 @@ tim_RequestState_t Tim_Set_SlaveMode( tim_PeriphId_t periphId, tim_SlaveMode_t s
  * \param periphId      [in]: Timer peripheral identification, value from \ref tim_PeriphId_t
  *                            (timer with slave mode controller).
  * \param slaveMode    [out]: Pointer to store slave mode. Must not be NULL.
- * \param triggerInput [out]: Pointer to store trigger input (raw TS selection, valid if
- *                            slave mode is not disabled). Must not be NULL.
+ * \param triggerInput [out]: Pointer to store trigger input, item of \ref tim_ExtClkSource_t of the
+ *                            timer (\ref TIM_TRIGGER_INPUT_UNUSED if slave mode is disabled).
+ *                            Must not be NULL.
  *
  * \return State of request execution. Returns \ref TIM_REQUEST_OK if request was
  *         success, otherwise returns \ref TIM_REQUEST_ERROR.
@@ -3002,8 +3011,9 @@ tim_RequestState_t Tim_Get_SlaveMode( tim_PeriphId_t periphId, tim_SlaveMode_t *
     {
         TIM_TypeDef * const timReg       = tim_PeriphConf[ periphId ].PeriphReg;
         const uint32_t      slaveModeReg = READ_BIT( timReg->SMCR, TIM_SMCR_SMS );
+        const uint32_t      triggerReg   = READ_BIT( timReg->SMCR, TIM_SMCR_TS );
 
-        *triggerInput = (tim_TriggerInput_t)READ_BIT( timReg->SMCR, TIM_SMCR_TS );
+        *triggerInput = TIM_TRIGGER_INPUT_UNUSED;
 
         retState = TIM_REQUEST_ERROR;
 
@@ -3020,6 +3030,27 @@ tim_RequestState_t Tim_Get_SlaveMode( tim_PeriphId_t periphId, tim_SlaveMode_t *
                 /* Continue with next slave mode */
                 retState = TIM_REQUEST_ERROR;
             }
+        }
+
+        if( ( TIM_REQUEST_OK         == retState  ) &&
+            ( TIM_SLAVE_MODE_DISABLE != *slaveMode )    )
+        {
+            const tim_TriggerInput_t triggerItem = TIM_TRIGGER_INPUT_OF( periphId, triggerReg );
+
+            retState = Tim_Check_TriggerInput( periphId, triggerItem );
+
+            if( TIM_REQUEST_OK == retState )
+            {
+                *triggerInput = triggerItem;
+            }
+            else
+            {
+                /* Selection code of the register is not a trigger input of the device */
+            }
+        }
+        else
+        {
+            /* Slave mode disabled (no trigger input in use) or slave mode not recognized */
         }
     }
     else
@@ -3709,7 +3740,7 @@ tim_RequestState_t Tim_Set_Mode_HalSensor( tim_PeriphId_t periphId, const tim_Ha
 
     if( TIM_REQUEST_OK == retState )
     {
-        retState = Tim_Set_SlaveMode( periphId, TIM_SLAVE_MODE_RESET, TIM_EXT_CLK_SOURCE_TI1_ED );
+        retState = Tim_Set_SlaveMode( periphId, TIM_SLAVE_MODE_RESET, TIM_TRIGGER_INPUT_OF( periphId, LL_TIM_TS_TI1F_ED ) );
     }
     else
     {
@@ -4809,7 +4840,7 @@ tim_RequestState_t Tim_Set_Mode_InputPwm( tim_PeriphId_t periphId, tim_ChannelId
 {
     tim_RequestState_t  retState       = TIM_REQUEST_ERROR;
     tim_ChannelId_t     pairedChannel  = TIM_CHANNEL_2;
-    tim_TriggerInput_t  triggerInput   = TIM_EXT_CLK_SOURCE_TI1FP1;
+    tim_TriggerInput_t  triggerInput   = TIM_TRIGGER_INPUT_UNUSED;
     tim_InputPolarity_t pairedPolarity = TIM_INPUT_POLARITY_INVERTED;
     tim_FunctionState_t periphState    = TIM_FUNCTION_ACTIVE;
 
@@ -4863,12 +4894,12 @@ tim_RequestState_t Tim_Set_Mode_InputPwm( tim_PeriphId_t periphId, tim_ChannelId
         if( TIM_CHANNEL_1 == inputChannel )
         {
             pairedChannel = TIM_CHANNEL_2;
-            triggerInput  = TIM_EXT_CLK_SOURCE_TI1FP1;
+            triggerInput  = TIM_TRIGGER_INPUT_OF( periphId, LL_TIM_TS_TI1FP1 );
         }
         else
         {
             pairedChannel = TIM_CHANNEL_1;
-            triggerInput  = TIM_EXT_CLK_SOURCE_TI2FP2;
+            triggerInput  = TIM_TRIGGER_INPUT_OF( periphId, LL_TIM_TS_TI2FP2 );
         }
 
         if( TIM_INPUT_POLARITY_NORMAL == inputPolarity )
@@ -5018,62 +5049,43 @@ tim_RequestState_t Tim_Get_InputPwm( tim_PeriphId_t periphId, tim_ChannelId_t in
 /**
  * \brief Selects source of timer channel input (TIx).
  *
- * STM32F4 timers have the input remap (TIMx_OR) only on selected channels:
- *  - TIM5 channel 4: \ref TIM_INPUT_SOURCE_1 LSI, \ref TIM_INPUT_SOURCE_2 LSE,
- *    \ref TIM_INPUT_SOURCE_3 RTC wake-up interrupt
- *  - TIM11 channel 1: \ref TIM_INPUT_SOURCE_1 HSE_RTC, \ref TIM_INPUT_SOURCE_2
- *    SPDIFRX (devices with SPDIFRX)
+ * STM32F4 timers have the input remap (TIMx_OR) only on selected channels, the items of
+ * \ref tim_InputSource_t are:
+ *  - TIM5 channel 4: \ref TIM_INPUT_SOURCE_TIM5_CH4_PIN (GPIO), _LSI, _LSE and
+ *    _RTC_WKUP (RTC wake-up interrupt)
+ *  - TIM11 channel 1: \ref TIM_INPUT_SOURCE_TIM11_CH1_PIN (GPIO), _HSE_RTC and
+ *    _SPDIFRX_FRAME_SYNC (devices with SPDIFRX)
  *
- * \ref TIM_INPUT_SOURCE_PIN (GPIO input) is accepted on all channels with input
- * stage (no register is changed on channels without input remap).
+ * The item must belong to the timer and the channel of the call.
  *
- * \pre   Channel must be available on the timer (channels 1 - 4) and the source
- *        must be available on the channel; otherwise \ref TIM_REQUEST_ERROR and
- *        no register is changed.
+ * \pre   Channel must be available on the timer (channels 1 - 4) and have an input
+ *        remap; otherwise \ref TIM_REQUEST_ERROR and no register is changed.
  *
  * \param periphId    [in]: Timer peripheral identification, value from \ref tim_PeriphId_t.
  * \param channelId   [in]: Timer channel identification, value from \ref tim_ChannelId_t.
- * \param inputSource [in]: Input source, value from \ref tim_InputSource_t.
+ * \param inputSource [in]: Input source, item of \ref tim_InputSource_t of the timer channel.
  *
  * \return State of request execution. Returns \ref TIM_REQUEST_OK if request was
  *         success, otherwise returns \ref TIM_REQUEST_ERROR.
  */
 tim_RequestState_t Tim_Set_InputSource( tim_PeriphId_t periphId, tim_ChannelId_t channelId, tim_InputSource_t inputSource )
 {
-    tim_RequestState_t                   retState    = Tim_Check_InputChannel( periphId, channelId );
-    const tim_InputRemapConfig_t * const remapConfig = Tim_Get_InputRemap( periphId, channelId );
+    tim_RequestState_t retState = Tim_Check_InputChannel( periphId, channelId );
 
-    if( ( TIM_REQUEST_OK == retState    ) &&
-        ( TIM_NULL_PTR   != remapConfig ) &&
-        ( TIM_INPUT_REMAP_SOURCE_CNT > inputSource ) )
+    if( TIM_REQUEST_OK == retState )
     {
-        if( TIM_REG_VAL_UNAVAILABLE != remapConfig->SelVal[ inputSource ] )
-        {
-            retState = TIM_REQUEST_OK;
-        }
-        else
-        {
-            /* Source is not available on the channel */
-            retState = TIM_REQUEST_ERROR;
-        }
-    }
-    else if( ( TIM_REQUEST_OK       == retState    ) &&
-             ( TIM_NULL_PTR         == remapConfig ) &&
-             ( TIM_INPUT_SOURCE_PIN == inputSource )    )
-    {
-        /* Channel without input remap is always connected to GPIO */
-        retState = TIM_REQUEST_OK;
+        retState = Tim_Check_InputSource( periphId, channelId, inputSource );
     }
     else
     {
         retState = TIM_REQUEST_ERROR;
     }
 
-    if( ( TIM_REQUEST_OK == retState    ) &&
-        ( TIM_NULL_PTR   != remapConfig )    )
+    if( TIM_REQUEST_OK == retState )
     {
-        TIM_TypeDef * const timReg    = tim_PeriphConf[ periphId ].PeriphReg;
-        const uint32_t      selRegVal = remapConfig->SelVal[ inputSource ];
+        const tim_InputRemapConfig_t * const remapConfig = Tim_Get_InputRemap( periphId, channelId );
+        TIM_TypeDef * const                  timReg      = tim_PeriphConf[ periphId ].PeriphReg;
+        const uint32_t                       selRegVal   = remapConfig->SelVal[ TIM_BIT_MASK_DECODE_INPUT_SOURCE_CODE( inputSource ) ];
 
         MODIFY_REG( timReg->OR, remapConfig->SelMask, selRegVal );
 
@@ -5105,10 +5117,13 @@ tim_RequestState_t Tim_Set_InputSource( tim_PeriphId_t periphId, tim_ChannelId_t
 /**
  * \brief Returns source of timer channel input (TIx).
  *
+ * \pre   Channel must be available on the timer (channels 1 - 4) and have an input
+ *        remap; otherwise \ref TIM_REQUEST_ERROR.
+ *
  * \param periphId     [in]: Timer peripheral identification, value from \ref tim_PeriphId_t.
  * \param channelId    [in]: Timer channel identification, value from \ref tim_ChannelId_t.
- * \param inputSource [out]: Pointer to store input source (\ref TIM_INPUT_SOURCE_PIN on
- *                           channels without input remap). Must not be NULL.
+ * \param inputSource [out]: Pointer to store input source, item of \ref tim_InputSource_t of the
+ *                           timer channel. Must not be NULL.
  *
  * \return State of request execution. Returns \ref TIM_REQUEST_OK if request was
  *         success, otherwise returns \ref TIM_REQUEST_ERROR.
@@ -5119,32 +5134,27 @@ tim_RequestState_t Tim_Get_InputSource( tim_PeriphId_t periphId, tim_ChannelId_t
     const tim_InputRemapConfig_t * const remapConfig = Tim_Get_InputRemap( periphId, channelId );
 
     if( ( TIM_REQUEST_OK == retState    ) &&
+        ( TIM_NULL_PTR   != remapConfig ) &&
         ( TIM_NULL_PTR   != inputSource )    )
     {
-        if( TIM_NULL_PTR != remapConfig )
+        const uint32_t selRegVal = READ_BIT( tim_PeriphConf[ periphId ].PeriphReg->OR, remapConfig->SelMask );
+        uint32_t       selCode   = 0u;
+
+        /* Remap values not listed in the table are additional GPIO selections */
+        for( uint32_t codeIdx = 0u; TIM_INPUT_REMAP_SOURCE_CNT > codeIdx; codeIdx ++ )
         {
-            const uint32_t selRegVal = READ_BIT( tim_PeriphConf[ periphId ].PeriphReg->OR, remapConfig->SelMask );
-
-            /* Remap values not listed in the table are additional GPIO selections */
-            *inputSource = TIM_INPUT_SOURCE_PIN;
-
-            for( tim_InputSource_t sourceIdx = TIM_INPUT_SOURCE_PIN; TIM_INPUT_REMAP_SOURCE_CNT > sourceIdx; sourceIdx ++ )
+            if( remapConfig->SelVal[ codeIdx ] == selRegVal )
             {
-                if( remapConfig->SelVal[ sourceIdx ] == selRegVal )
-                {
-                    *inputSource = sourceIdx;
-                    break;
-                }
-                else
-                {
-                    /* Continue with next input source */
-                }
+                selCode = codeIdx;
+                break;
+            }
+            else
+            {
+                /* Continue with next selection code */
             }
         }
-        else
-        {
-            *inputSource = TIM_INPUT_SOURCE_PIN;
-        }
+
+        *inputSource = TIM_INPUT_SOURCE_OF( periphId, channelId, selCode );
     }
     else
     {
@@ -6253,7 +6263,7 @@ tim_RequestState_t Tim_Set_ClockSource( tim_PeriphId_t periphId, tim_ClockSource
 
             if( 0u != slaveModeAvailability )
             {
-                retState = Tim_Check_ExtClkSource( triggerSource );
+                retState = Tim_Check_TriggerInput( periphId, triggerSource );
             }
             else
             {
@@ -6297,15 +6307,16 @@ tim_RequestState_t Tim_Set_ClockSource( tim_PeriphId_t periphId, tim_ClockSource
     if( ( TIM_REQUEST_OK                 == retState    ) &&
         ( TIM_CLOCKSOURCE_EXTERNAL_CH_IN == clockSource )    )
     {
-        TIM_TypeDef * const timReg = tim_PeriphConf[ periphId ].PeriphReg;
+        TIM_TypeDef * const timReg      = tim_PeriphConf[ periphId ].PeriphReg;
+        const uint32_t      triggerCode = TIM_BIT_MASK_DECODE_SELECTION_CODE( triggerSource );
 
-        LL_TIM_SetTriggerInput( timReg, triggerSource );
+        LL_TIM_SetTriggerInput( timReg, triggerCode );
 
         for( uint32_t iterationCnt = 0u; TIM_TIMEOUT_RAW > iterationCnt; iterationCnt ++ )
         {
             const uint32_t regValue = READ_BIT( timReg->SMCR, TIM_SMCR_TS );
 
-            if( (uint32_t)triggerSource == regValue )
+            if( triggerCode == regValue )
             {
                 retState = TIM_REQUEST_OK;
                 break;
@@ -6424,7 +6435,7 @@ tim_RequestState_t Tim_Set_TriggerSource( tim_PeriphId_t periphId, tim_ChannelId
 {
     tim_RequestState_t  retState     = TIM_REQUEST_ERROR;
     tim_FunctionState_t periphState  = TIM_FUNCTION_ACTIVE;
-    tim_TriggerInput_t  triggerInput = TIM_EXT_CLK_SOURCE_TI1FP1;
+    uint32_t            triggerCode  = LL_TIM_TS_TI1FP1;
 
     if( ( TIM_PERIPH_CNT > periphId                ) &&
         ( ( TIM_CHANNEL_1 == channelId ) ||
@@ -6473,24 +6484,24 @@ tim_RequestState_t Tim_Set_TriggerSource( tim_PeriphId_t periphId, tim_ChannelId
 
         if( TIM_CHANNEL_1 == channelId )
         {
-            triggerInput = TIM_EXT_CLK_SOURCE_TI1FP1;
+            triggerCode = LL_TIM_TS_TI1FP1;
         }
         else
         {
-            triggerInput = TIM_EXT_CLK_SOURCE_TI2FP2;
+            triggerCode = LL_TIM_TS_TI2FP2;
         }
 
         retState = Tim_Config_SlaveModeReg( periphId, LL_TIM_SLAVEMODE_DISABLED );
 
         if( TIM_REQUEST_OK == retState )
         {
-            LL_TIM_SetTriggerInput( timReg, triggerInput );
+            LL_TIM_SetTriggerInput( timReg, triggerCode );
 
             for( uint32_t iterationCnt = 0u; TIM_TIMEOUT_RAW > iterationCnt; iterationCnt ++ )
             {
                 const uint32_t regValue = READ_BIT( timReg->SMCR, TIM_SMCR_TS );
 
-                if( (uint32_t)triggerInput == regValue )
+                if( triggerCode == regValue )
                 {
                     retState = TIM_REQUEST_OK;
                     break;
@@ -8524,29 +8535,43 @@ static tim_RequestState_t Tim_Config_CounterDirection( tim_PeriphId_t periphId, 
 }
 
 /**
- * \brief Checks validity of external clock (trigger input) source.
+ * \brief Checks a trigger input (slave mode controller / external clock mode 1 input) of the timer.
  *
- * \param extClkSource [in]: Trigger input identification, value from \ref tim_ExtClkSource_t.
+ * The item must belong to the timer and its SMCR.TS code must be a trigger selection of the device.
  *
- * \return Returns \ref TIM_REQUEST_OK if the value is a supported trigger input,
+ * \param periphId     [in]: Timer peripheral identification, value from \ref tim_PeriphId_t.
+ * \param triggerInput [in]: Trigger input, item of \ref tim_ExtClkSource_t.
+ *
+ * \return Returns \ref TIM_REQUEST_OK if the item is a trigger input of the timer,
  *         otherwise returns \ref TIM_REQUEST_ERROR.
  */
-static tim_RequestState_t Tim_Check_ExtClkSource( tim_ExtClkSource_t extClkSource )
+static tim_RequestState_t Tim_Check_TriggerInput( tim_PeriphId_t periphId, tim_ExtClkSource_t triggerInput )
 {
-    tim_RequestState_t retState = TIM_REQUEST_ERROR;
+    tim_RequestState_t retState   = TIM_REQUEST_ERROR;
+    const uint32_t     itemPeriph = TIM_BIT_MASK_DECODE_SELECTION_PERIPH( triggerInput );
+    const uint32_t     itemCode   = TIM_BIT_MASK_DECODE_SELECTION_CODE( triggerInput );
 
-    for( uint32_t sourceIdx = 0u; TIM_EXT_CLK_SOURCE_CNT > sourceIdx; sourceIdx ++ )
+    if( ( TIM_PERIPH_CNT      > periphId   ) &&
+        ( (uint32_t)periphId == itemPeriph )    )
     {
-        if( tim_ExtClkSourceLut[ sourceIdx ] == extClkSource )
+        for( uint32_t codeIdx = 0u; TIM_TRIGGER_CODE_CNT > codeIdx; codeIdx ++ )
         {
-            retState = TIM_REQUEST_OK;
-            break;
+            if( tim_TriggerCodeLut[ codeIdx ] == itemCode )
+            {
+                retState = TIM_REQUEST_OK;
+                break;
+            }
+            else
+            {
+                /* Continue with next trigger selection code */
+                retState = TIM_REQUEST_ERROR;
+            }
         }
-        else
-        {
-            /* Continue with next supported source */
-            retState = TIM_REQUEST_ERROR;
-        }
+    }
+    else
+    {
+        /* Trigger input of another timer or timer out of range */
+        retState = TIM_REQUEST_ERROR;
     }
 
     return ( retState );
@@ -8640,6 +8665,51 @@ static const tim_InputRemapConfig_t * Tim_Get_InputRemap( tim_PeriphId_t periphI
     }
 
     return ( remapConfig );
+}
+
+
+/**
+ * \brief Checks an input source of a timer channel with input remap.
+ *
+ * The item must belong to the timer and the channel and its selection code must be available on the device.
+ *
+ * \param periphId    [in]: Timer peripheral identification, value from \ref tim_PeriphId_t.
+ * \param channelId   [in]: Timer channel identification, value from \ref tim_ChannelId_t.
+ * \param inputSource [in]: Input source, item of \ref tim_InputSource_t.
+ *
+ * \return Returns \ref TIM_REQUEST_OK if the item is an input source of the timer channel,
+ *         otherwise returns \ref TIM_REQUEST_ERROR.
+ */
+static tim_RequestState_t Tim_Check_InputSource( tim_PeriphId_t periphId, tim_ChannelId_t channelId, tim_InputSource_t inputSource )
+{
+    tim_RequestState_t                   retState    = TIM_REQUEST_ERROR;
+    const tim_InputRemapConfig_t * const remapConfig = Tim_Get_InputRemap( periphId, channelId );
+    const uint32_t                       itemPeriph  = TIM_BIT_MASK_DECODE_SELECTION_PERIPH( inputSource );
+    const uint32_t                       itemChannel = TIM_BIT_MASK_DECODE_INPUT_SOURCE_CHANNEL( inputSource );
+    const uint32_t                       itemCode    = TIM_BIT_MASK_DECODE_INPUT_SOURCE_CODE( inputSource );
+
+    if( ( TIM_NULL_PTR              != remapConfig ) &&
+        ( (uint32_t)periphId        == itemPeriph  ) &&
+        ( (uint32_t)channelId       == itemChannel ) &&
+        ( TIM_INPUT_REMAP_SOURCE_CNT > itemCode    )    )
+    {
+        if( TIM_REG_VAL_UNAVAILABLE != remapConfig->SelVal[ itemCode ] )
+        {
+            retState = TIM_REQUEST_OK;
+        }
+        else
+        {
+            /* Selection code is not available on the device */
+            retState = TIM_REQUEST_ERROR;
+        }
+    }
+    else
+    {
+        /* Input source of another timer / channel or channel without input remap */
+        retState = TIM_REQUEST_ERROR;
+    }
+
+    return ( retState );
 }
 
 

@@ -70,6 +70,36 @@
 /** Extract alternative function ID from encoded value */
 #define TIM_BIT_MASK_DECODE_AF(CODED_VAL)                   ( ( CODED_VAL >> TIM_BIT_MASK_AF_BIT_OFFSET ) & 0x1F )
 
+/** Timer identification bit offset in encoded trigger input / ETR source */
+#define TIM_BIT_MASK_SELECTION_PERIPH_BIT_OFFSET            ( 24u )
+
+/** Encode timer identification and register code of a selection list item into single bit-mask */
+#define TIM_SELECTION_BIT_MASK_ENCODE(PERIPH_ID,CODE)       ( ( (PERIPH_ID) << TIM_BIT_MASK_SELECTION_PERIPH_BIT_OFFSET ) | (CODE) )
+
+/** Encode trigger input (slave timer and SMCR.TS code) */
+#define TIM_TRIGGER_INPUT_BIT_MASK_ENCODE(PERIPH_ID,TS_CODE)        TIM_SELECTION_BIT_MASK_ENCODE( PERIPH_ID, TS_CODE )
+
+/** Encode ETR source (timer and ETRSEL code) */
+#define TIM_ETR_SOURCE_BIT_MASK_ENCODE(PERIPH_ID,ETRSEL_CODE)       TIM_SELECTION_BIT_MASK_ENCODE( PERIPH_ID, ETRSEL_CODE )
+
+/** Extract timer identification from a selection list item */
+#define TIM_BIT_MASK_DECODE_SELECTION_PERIPH(CODED_VAL)     ( ( (uint32_t)(CODED_VAL) >> TIM_BIT_MASK_SELECTION_PERIPH_BIT_OFFSET ) & 0x7Fu )
+
+/** Extract register code (SMCR.TS, ETRSEL) from a selection list item */
+#define TIM_BIT_MASK_DECODE_SELECTION_CODE(CODED_VAL)       ( (uint32_t)(CODED_VAL) & 0x00FFFFFFu )
+
+/** Channel identification bit offset in encoded input source */
+#define TIM_BIT_MASK_INPUT_SOURCE_CHANNEL_BIT_OFFSET        ( 16u )
+
+/** Encode input source (timer, channel and selection code of the TISEL / OR field) */
+#define TIM_INPUT_SOURCE_BIT_MASK_ENCODE(PERIPH_ID,CHANNEL_ID,SEL_CODE)     TIM_SELECTION_BIT_MASK_ENCODE( PERIPH_ID, ( ( (CHANNEL_ID) << TIM_BIT_MASK_INPUT_SOURCE_CHANNEL_BIT_OFFSET ) | (SEL_CODE) ) )
+
+/** Extract channel identification from an input source item */
+#define TIM_BIT_MASK_DECODE_INPUT_SOURCE_CHANNEL(CODED_VAL) ( ( (uint32_t)(CODED_VAL) >> TIM_BIT_MASK_INPUT_SOURCE_CHANNEL_BIT_OFFSET ) & 0xFFu )
+
+/** Extract selection code (value of the TISEL / OR field) from an input source item */
+#define TIM_BIT_MASK_DECODE_INPUT_SOURCE_CODE(CODED_VAL)    ( (uint32_t)(CODED_VAL) & 0xFFFFu )
+
 
 /* ============================== TYPEDEFS ================================== */
 
@@ -552,37 +582,6 @@ typedef enum
 }   tim_ActiveInput_t;
 
 
-/**
- * \brief Timer input (TIx) source selection
- *
- * \ref TIM_INPUT_SOURCE_PIN selects the GPIO input, other values select internal
- * signals specific for each timer and input. On STM32F4 the input remap (TIMx_OR)
- * is available on TIM5 channel 4 (\ref TIM_INPUT_SOURCE_1 LSI, \ref TIM_INPUT_SOURCE_2
- * LSE, \ref TIM_INPUT_SOURCE_3 RTC wake-up) and TIM11 channel 1 (\ref TIM_INPUT_SOURCE_1
- * HSE_RTC, \ref TIM_INPUT_SOURCE_2 SPDIFRX on devices with SPDIFRX) only.
- */
-typedef enum
-{
-    TIM_INPUT_SOURCE_PIN = 0u,      /**< TIx input pin (GPIO)       */
-    TIM_INPUT_SOURCE_1,             /**< Timer specific source 1    */
-    TIM_INPUT_SOURCE_2,             /**< Timer specific source 2    */
-    TIM_INPUT_SOURCE_3,             /**< Timer specific source 3    */
-    TIM_INPUT_SOURCE_4,             /**< Timer specific source 4    */
-    TIM_INPUT_SOURCE_5,             /**< Timer specific source 5    */
-    TIM_INPUT_SOURCE_6,             /**< Timer specific source 6    */
-    TIM_INPUT_SOURCE_7,             /**< Timer specific source 7    */
-    TIM_INPUT_SOURCE_8,             /**< Timer specific source 8    */
-    TIM_INPUT_SOURCE_9,             /**< Timer specific source 9    */
-    TIM_INPUT_SOURCE_10,            /**< Timer specific source 10   */
-    TIM_INPUT_SOURCE_11,            /**< Timer specific source 11   */
-    TIM_INPUT_SOURCE_12,            /**< Timer specific source 12   */
-    TIM_INPUT_SOURCE_13,            /**< Timer specific source 13   */
-    TIM_INPUT_SOURCE_14,            /**< Timer specific source 14   */
-    TIM_INPUT_SOURCE_15,            /**< Timer specific source 15   */
-    TIM_INPUT_SOURCE_CNT            /**< Count of input source selections */
-}   tim_InputSource_t;
-
-
 /** \brief Dead-time and sampling clock (fDTS) division of timer kernel clock */
 typedef enum
 {
@@ -921,39 +920,175 @@ typedef enum
 }   tim_EtrSource_t;
 
 
+/** Devices described by the reference manual RM0401 (the connections of the timers differ between manuals) */
+#if defined(STM32F410Cx) || \
+    defined(STM32F410Rx) || \
+    defined(STM32F410Tx)
+#define TIM_DEVICES_RM0401
+#endif
+
+
+/**
+ * \brief Timer input (TIx) source selection
+ *
+ * List of the sources of the timer channel inputs of the channels with an input remap (TIMx_OR): channel 4 of TIM5
+ * and channel 1 of TIM11. The items are named by the timer, the channel and the signal that is connected to the input:
+ * TIM_INPUT_SOURCE_<timer>_CH<n>_PIN selects the channel input pin, the other items select internal signals (LSI, LSE,
+ * RTC wake-up interrupt, HSE divided for RTC, ...). Every item is active exactly on the device lines where the
+ * connection exists, an item of another timer or channel is refused by the functions. The other channels have no
+ * input selection (their input is the pin).
+ */
 typedef enum
 {
-    /** Internal trigger input bus. These inputs can be used for the slave mode
-     * controller or as a input clock (below 1/4 of the tim_ker_ck clock). */
-    TIM_EXT_CLK_SOURCE_ITR0 = LL_TIM_TS_ITR0,
+#if defined(TIM5)
+    TIM_INPUT_SOURCE_TIM5_CH4_PIN      = TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_5, TIM_CHANNEL_4, 0u ),
+    TIM_INPUT_SOURCE_TIM5_CH4_LSI      = TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_5, TIM_CHANNEL_4, 1u ),
+    TIM_INPUT_SOURCE_TIM5_CH4_LSE      = TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_5, TIM_CHANNEL_4, 2u ),
+    TIM_INPUT_SOURCE_TIM5_CH4_RTC_WKUP = TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_5, TIM_CHANNEL_4, 3u ),
+#endif /* TIM5 */
 
-    /** Internal trigger input bus. These inputs can be used for the slave mode
-     * controller or as a input clock (below 1/4 of the tim_ker_ck clock). */
-    TIM_EXT_CLK_SOURCE_ITR1 = LL_TIM_TS_ITR1,
+#if defined(TIM11)
+    TIM_INPUT_SOURCE_TIM11_CH1_PIN                = TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_11, TIM_CHANNEL_1, 0u ),
+#if defined(SPDIFRX)
+    TIM_INPUT_SOURCE_TIM11_CH1_SPDIFRX_FRAME_SYNC = TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_11, TIM_CHANNEL_1, 1u ),
+#endif
+    TIM_INPUT_SOURCE_TIM11_CH1_HSE_RTC            = TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_11, TIM_CHANNEL_1, 2u ),
+#endif /* TIM11 */
+}   tim_InputSource_t;
 
-    /** Internal trigger input bus. These inputs can be used for the slave mode
-     * controller or as a input clock (below 1/4 of the tim_ker_ck clock). */
-    TIM_EXT_CLK_SOURCE_ITR2 = LL_TIM_TS_ITR2,
 
-    /** Internal trigger input bus. These inputs can be used for the slave mode
-     * controller or as a input clock (below 1/4 of the tim_ker_ck clock). */
-    TIM_EXT_CLK_SOURCE_ITR3 = LL_TIM_TS_ITR3,
+/**
+ * \brief Trigger input (TRGI) of the slave mode controller / source of the external clock mode 1
+ *
+ * List of the trigger inputs of every timer with the slave mode controller (SMCR.TS). The internal trigger
+ * inputs are named by the slave timer, the input and the master timer signal that is connected to it (tables
+ * "TIMx internal trigger connection" of the reference manual), the other items are the timer inputs
+ * (TI1F_ED, TI1FP1, TI2FP2) and the filtered external trigger (ETRF). Every item is active exactly on the device
+ * lines where the input exists, an item of another timer is refused by the functions. Connections that need
+ * a remap bit of the timer option register are not part of the list.
+ */
+typedef enum
+{
+#if defined(TIM1)
+    TIM_TRIGGER_INPUT_TIM1_ITR0_TIM5_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_ITR0 ),
+#if defined(TIM2)
+    TIM_TRIGGER_INPUT_TIM1_ITR1_TIM2_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_ITR1 ),
+#endif
+#if defined(TIM3)
+    TIM_TRIGGER_INPUT_TIM1_ITR2_TIM3_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_ITR2 ),
+#endif
+#if defined(TIM4)
+    TIM_TRIGGER_INPUT_TIM1_ITR3_TIM4_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_ITR3 ),
+#endif
+    TIM_TRIGGER_INPUT_TIM1_TI1F_ED        = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM1_TI1FP1         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM1_TI2FP2         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_TI2FP2 ),
+    TIM_TRIGGER_INPUT_TIM1_ETRF           = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_1, LL_TIM_TS_ETRF ),
+#endif /* TIM1 */
 
-    /** External trigger internal input bus. These inputs can be used as
-     * trigger, external clock or for hardware cycle-by-cycle pulsewidth control.
-     * These inputs can receive clock with a frequency higher than the
-     * tim_ker_ck if the tim_etr_in prescaler is used. */
-    TIM_EXT_CLK_SOURCE_ETR1 = LL_TIM_TS_ETRF,
+#if defined(TIM2)
+    TIM_TRIGGER_INPUT_TIM2_ITR0_TIM1_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_ITR0 ),
+#if defined(TIM8)
+    TIM_TRIGGER_INPUT_TIM2_ITR1_TIM8_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_ITR1 ),
+#endif
+    TIM_TRIGGER_INPUT_TIM2_ITR2_TIM3_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_ITR2 ),
+    TIM_TRIGGER_INPUT_TIM2_ITR3_TIM4_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_ITR3 ),
+    TIM_TRIGGER_INPUT_TIM2_TI1F_ED        = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM2_TI1FP1         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM2_TI2FP2         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_TI2FP2 ),
+    TIM_TRIGGER_INPUT_TIM2_ETRF           = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_2, LL_TIM_TS_ETRF ),
+#endif /* TIM2 */
 
-    /** Filtered external Trigger (ETRF) is used as trigger input */
-    TIM_EXT_CLK_SOURCE_TI1_ED = LL_TIM_TS_TI1F_ED,
+#if defined(TIM3)
+    TIM_TRIGGER_INPUT_TIM3_ITR0_TIM1_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_ITR0 ),
+    TIM_TRIGGER_INPUT_TIM3_ITR1_TIM2_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_ITR1 ),
+    TIM_TRIGGER_INPUT_TIM3_ITR2_TIM5_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_ITR2 ),
+    TIM_TRIGGER_INPUT_TIM3_ITR3_TIM4_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_ITR3 ),
+    TIM_TRIGGER_INPUT_TIM3_TI1F_ED        = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM3_TI1FP1         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM3_TI2FP2         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_TI2FP2 ),
+    TIM_TRIGGER_INPUT_TIM3_ETRF           = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_3, LL_TIM_TS_ETRF ),
+#endif /* TIM3 */
 
-    /** Filtered Timer Input 1 (TI1FP1) is used as trigger input */
-    TIM_EXT_CLK_SOURCE_TI1FP1 = LL_TIM_TS_TI1FP1,
+#if defined(TIM4)
+    TIM_TRIGGER_INPUT_TIM4_ITR0_TIM1_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_ITR0 ),
+    TIM_TRIGGER_INPUT_TIM4_ITR1_TIM2_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_ITR1 ),
+    TIM_TRIGGER_INPUT_TIM4_ITR2_TIM3_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_ITR2 ),
+#if defined(TIM8)
+    TIM_TRIGGER_INPUT_TIM4_ITR3_TIM8_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_ITR3 ),
+#endif
+    TIM_TRIGGER_INPUT_TIM4_TI1F_ED        = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM4_TI1FP1         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM4_TI2FP2         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_TI2FP2 ),
+    TIM_TRIGGER_INPUT_TIM4_ETRF           = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_4, LL_TIM_TS_ETRF ),
+#endif /* TIM4 */
 
-    /*!< Filtered Timer Input 2 (TI12P2) is used as trigger input */
-    TIM_EXT_CLK_SOURCE_TI2FP2 = LL_TIM_TS_TI2FP2,
+#if defined(TIM5)
+#if defined(TIM2)
+    TIM_TRIGGER_INPUT_TIM5_ITR0_TIM2_TRGO  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_ITR0 ),
+#endif
+#if defined(TIM_DEVICES_RM0401)
+    TIM_TRIGGER_INPUT_TIM5_ITR1_LPTIM1_OUT = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_ITR1 ),
+#endif
+#if defined(TIM3)
+    TIM_TRIGGER_INPUT_TIM5_ITR1_TIM3_TRGO  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_ITR1 ),
+#endif
+#if defined(TIM4)
+    TIM_TRIGGER_INPUT_TIM5_ITR2_TIM4_TRGO  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_ITR2 ),
+#endif
+#if defined(TIM8)
+    TIM_TRIGGER_INPUT_TIM5_ITR3_TIM8_TRGO  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_ITR3 ),
+#endif
+    TIM_TRIGGER_INPUT_TIM5_TI1F_ED         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM5_TI1FP1          = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM5_TI2FP2          = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_TI2FP2 ),
+#if !defined(TIM_DEVICES_RM0401)
+    TIM_TRIGGER_INPUT_TIM5_ETRF            = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_5, LL_TIM_TS_ETRF ),
+#endif
+#endif /* TIM5 */
 
+#if defined(TIM8)
+    TIM_TRIGGER_INPUT_TIM8_ITR0_TIM1_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_ITR0 ),
+    TIM_TRIGGER_INPUT_TIM8_ITR1_TIM2_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_ITR1 ),
+    TIM_TRIGGER_INPUT_TIM8_ITR2_TIM4_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_ITR2 ),
+    TIM_TRIGGER_INPUT_TIM8_ITR3_TIM5_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_ITR3 ),
+    TIM_TRIGGER_INPUT_TIM8_TI1F_ED        = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM8_TI1FP1         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM8_TI2FP2         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_TI2FP2 ),
+    TIM_TRIGGER_INPUT_TIM8_ETRF           = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_8, LL_TIM_TS_ETRF ),
+#endif /* TIM8 */
+
+#if defined(TIM9)
+#if defined(TIM2)
+    TIM_TRIGGER_INPUT_TIM9_ITR0_TIM2_TRGO  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_ITR0 ),
+#endif
+#if defined(TIM_DEVICES_RM0401)
+    TIM_TRIGGER_INPUT_TIM9_ITR1_LPTIM1_OUT = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_ITR1 ),
+#endif
+#if defined(TIM3)
+    TIM_TRIGGER_INPUT_TIM9_ITR1_TIM3_TRGO  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_ITR1 ),
+#endif
+#if defined(TIM10)
+    TIM_TRIGGER_INPUT_TIM9_ITR2_TIM10_OC1  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_ITR2 ),
+#endif
+    TIM_TRIGGER_INPUT_TIM9_ITR3_TIM11_OC1  = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_ITR3 ),
+    TIM_TRIGGER_INPUT_TIM9_TI1F_ED         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM9_TI1FP1          = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM9_TI2FP2          = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_9, LL_TIM_TS_TI2FP2 ),
+#endif /* TIM9 */
+
+#if defined(TIM12)
+    TIM_TRIGGER_INPUT_TIM12_ITR0_TIM4_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_12, LL_TIM_TS_ITR0 ),
+    TIM_TRIGGER_INPUT_TIM12_ITR1_TIM5_TRGO = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_12, LL_TIM_TS_ITR1 ),
+    TIM_TRIGGER_INPUT_TIM12_ITR2_TIM13_OC1 = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_12, LL_TIM_TS_ITR2 ),
+    TIM_TRIGGER_INPUT_TIM12_ITR3_TIM14_OC1 = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_12, LL_TIM_TS_ITR3 ),
+    TIM_TRIGGER_INPUT_TIM12_TI1F_ED        = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_12, LL_TIM_TS_TI1F_ED ),
+    TIM_TRIGGER_INPUT_TIM12_TI1FP1         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_12, LL_TIM_TS_TI1FP1 ),
+    TIM_TRIGGER_INPUT_TIM12_TI2FP2         = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_12, LL_TIM_TS_TI2FP2 ),
+#endif /* TIM12 */
+
+    /** No trigger input (not used) */
+    TIM_TRIGGER_INPUT_UNUSED = TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( TIM_PERIPH_CNT, 0u )
 }   tim_ExtClkSource_t;
 
 
@@ -1012,157 +1147,226 @@ typedef uint32_t tim_IrqPrio_t;
 /** \brief Enumeration of all possible Channel inputs/outputs (Ch), STM32F405 / STM32F407 alternate function mapping */
 typedef enum
 {
-    /*---------------------------- Timer 1 pins ----------------------------*/
-#ifdef TIM1
     TIM_1_CH1_PA8     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_A , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
-    TIM_1_CH1_PE9     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_1  ),
-#endif
+#if !defined(STM32F410Tx)
     TIM_1_CH2_PA9     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_A , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
-    TIM_1_CH2_PE11    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_1  ),
-#endif
     TIM_1_CH3_PA10    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_1  , GPIO_PORT_A , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
-    TIM_1_CH3_PE13    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_1  ),
-#endif
     TIM_1_CH4_PA11    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_1  , GPIO_PORT_A , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
+#endif
+#if !defined(STM32F410Cx) && \
+    !defined(STM32F410Rx) && \
+    !defined(STM32F410Tx) && \
+    !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
+    TIM_1_CH1_PE9     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_1  ),
+    TIM_1_CH2_PE11    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_1  ),
+    TIM_1_CH3_PE13    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_1  ),
     TIM_1_CH4_PE14    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_1  ),
 #endif
-#endif
-    /*---------------------------- Timer 2 pins ----------------------------*/
-#ifdef TIM2
+
+#if defined(TIM2)
     TIM_2_CH1_PA0     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_1  ),
+    TIM_2_CH2_PA1     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_1  , GPIO_ALT_FUNC_1  ),
+    TIM_2_CH3_PA2     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_1  ),
+    TIM_2_CH4_PA3     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_1  ),
     TIM_2_CH1_PA5     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_1  ),
     TIM_2_CH1_PA15    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_1  ),
-    TIM_2_CH2_PA1     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_1  , GPIO_ALT_FUNC_1  ),
+#if defined(STM32F446xx)
+    TIM_2_CH4_PB2      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_2  , GPIO_PORT_B , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_1  ),
+#endif
     TIM_2_CH2_PB3     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_2  , GPIO_PORT_B , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_1  ),
-    TIM_2_CH3_PA2     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_1  ),
+#if defined(STM32F446xx)
+    TIM_2_CH1_PB8      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_2  , GPIO_PORT_B , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_1  ),
+    TIM_2_CH2_PB9      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_2  , GPIO_PORT_B , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_1  ),
+#endif
     TIM_2_CH3_PB10    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_2  , GPIO_PORT_B , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_1  ),
-    TIM_2_CH4_PA3     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_1  ),
+#if !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
     TIM_2_CH4_PB11    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_2  , GPIO_PORT_B , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_1  ),
 #endif
-    /*---------------------------- Timer 3 pins ----------------------------*/
-#ifdef TIM3
+#endif /* TIM2 */
+
+#if defined(TIM3)
     TIM_3_CH1_PA6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_3  , GPIO_PORT_A , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_2  ),
-    TIM_3_CH1_PB4     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_3  , GPIO_PORT_B , GPIO_PIN_ID_4  , GPIO_ALT_FUNC_2  ),
-    TIM_3_CH1_PC6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_3  , GPIO_PORT_C , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_2  ),
     TIM_3_CH2_PA7     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_3  , GPIO_PORT_A , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_2  ),
-    TIM_3_CH2_PB5     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_3  , GPIO_PORT_B , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_2  ),
-    TIM_3_CH2_PC7     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_3  , GPIO_PORT_C , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_2  ),
     TIM_3_CH3_PB0     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_3  , GPIO_PORT_B , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_2  ),
-    TIM_3_CH3_PC8     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_3  , GPIO_PORT_C , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_2  ),
     TIM_3_CH4_PB1     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_3  , GPIO_PORT_B , GPIO_PIN_ID_1  , GPIO_ALT_FUNC_2  ),
+    TIM_3_CH1_PB4     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_3  , GPIO_PORT_B , GPIO_PIN_ID_4  , GPIO_ALT_FUNC_2  ),
+    TIM_3_CH2_PB5     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_3  , GPIO_PORT_B , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_2  ),
+#if !defined(STM32F412Cx)
+    TIM_3_CH1_PC6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_3  , GPIO_PORT_C , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_2  ),
+    TIM_3_CH2_PC7     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_3  , GPIO_PORT_C , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_2  ),
+    TIM_3_CH3_PC8     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_3  , GPIO_PORT_C , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_2  ),
     TIM_3_CH4_PC9     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_3  , GPIO_PORT_C , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_2  ),
 #endif
-    /*---------------------------- Timer 4 pins ----------------------------*/
-#ifdef TIM4
+#endif /* TIM3 */
+
+#if defined(TIM4)
     TIM_4_CH1_PB6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_4  , GPIO_PORT_B , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOD)
-    TIM_4_CH1_PD12    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_4  , GPIO_PORT_D , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_2  ),
-#endif
     TIM_4_CH2_PB7     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_4  , GPIO_PORT_B , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOD)
-    TIM_4_CH2_PD13    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_4  , GPIO_PORT_D , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_2  ),
-#endif
     TIM_4_CH3_PB8     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_4  , GPIO_PORT_B , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOD)
-    TIM_4_CH3_PD14    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_4  , GPIO_PORT_D , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_2  ),
-#endif
     TIM_4_CH4_PB9     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_4  , GPIO_PORT_B , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOD)
+#if !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
+    TIM_4_CH1_PD12    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_4  , GPIO_PORT_D , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_2  ),
+    TIM_4_CH2_PD13    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_4  , GPIO_PORT_D , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_2  ),
+    TIM_4_CH3_PD14    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_4  , GPIO_PORT_D , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_2  ),
     TIM_4_CH4_PD15    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_4  , GPIO_PORT_D , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_2  ),
 #endif
-#endif
-    /*---------------------------- Timer 5 pins ----------------------------*/
-#ifdef TIM5
+#endif /* TIM4 */
+
     TIM_5_CH1_PA0     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_5  , GPIO_PORT_A , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOH)
-    TIM_5_CH1_PH10    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_5  , GPIO_PORT_H , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_2  ),
-#endif
+#if !defined(STM32F410Tx)
     TIM_5_CH2_PA1     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_5  , GPIO_PORT_A , GPIO_PIN_ID_1  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOH)
-    TIM_5_CH2_PH11    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_5  , GPIO_PORT_H , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_2  ),
 #endif
     TIM_5_CH3_PA2     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_5  , GPIO_PORT_A , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOH)
+    TIM_5_CH4_PA3     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_5  , GPIO_PORT_A , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_2  ),
+#if defined(STM32F410Rx)
+    TIM_5_CH4_PB11     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_5  , GPIO_PORT_B , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_2  ),
+#endif
+#if defined(STM32F410Cx) || \
+    defined(STM32F410Rx) || \
+    defined(STM32F410Tx)
+    TIM_5_CH1_PB12     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_5  , GPIO_PORT_B , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_2  ),
+#endif
+#if defined(STM32F410Rx)
+    TIM_5_CH2_PC10     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_5  , GPIO_PORT_C , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_2  ),
+    TIM_5_CH3_PC11     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_5  , GPIO_PORT_C , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_2  ),
+#endif
+#if defined(STM32F412Zx) || \
+    defined(STM32F413xx) || \
+    defined(STM32F423xx)
+    TIM_5_CH1_PF3      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_5  , GPIO_PORT_F , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_2  ),
+    TIM_5_CH2_PF4      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_5  , GPIO_PORT_F , GPIO_PIN_ID_4  , GPIO_ALT_FUNC_2  ),
+    TIM_5_CH3_PF5      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_5  , GPIO_PORT_F , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_2  ),
+    TIM_5_CH4_PF10     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_5  , GPIO_PORT_F , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_2  ),
+#endif
+#if defined(STM32F407xx) || \
+    defined(STM32F417xx) || \
+    defined(STM32F427xx) || \
+    defined(STM32F429xx) || \
+    defined(STM32F437xx) || \
+    defined(STM32F439xx) || \
+    defined(STM32F469xx) || \
+    defined(STM32F479xx)
+    TIM_5_CH1_PH10    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_5  , GPIO_PORT_H , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_2  ),
+    TIM_5_CH2_PH11    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_5  , GPIO_PORT_H , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_2  ),
     TIM_5_CH3_PH12    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_5  , GPIO_PORT_H , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_2  ),
 #endif
-    TIM_5_CH4_PA3     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_5  , GPIO_PORT_A , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_2  ),
-#if defined (GPIOI)
+#if defined(STM32F405xx) || \
+    defined(STM32F407xx) || \
+    defined(STM32F415xx) || \
+    defined(STM32F417xx) || \
+    defined(STM32F427xx) || \
+    defined(STM32F429xx) || \
+    defined(STM32F437xx) || \
+    defined(STM32F439xx) || \
+    defined(STM32F469xx) || \
+    defined(STM32F479xx)
     TIM_5_CH4_PI0     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_5  , GPIO_PORT_I , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_2  ),
 #endif
-#endif
-    /*---------------------------- Timer 8 pins ----------------------------*/
-#ifdef TIM8
+
+#if defined(TIM8)
+#if !defined(STM32F412Cx)
     TIM_8_CH1_PC6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_8  , GPIO_PORT_C , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOI)
-    TIM_8_CH1_PI5     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_3  ),
-#endif
     TIM_8_CH2_PC7     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_C , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOI)
-    TIM_8_CH2_PI6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_3  ),
-#endif
     TIM_8_CH3_PC8     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_8  , GPIO_PORT_C , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOI)
+    TIM_8_CH4_PC9     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_8  , GPIO_PORT_C , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_3  ),
+#endif
+#if defined(STM32F407xx) || \
+    defined(STM32F417xx) || \
+    defined(STM32F427xx) || \
+    defined(STM32F429xx) || \
+    defined(STM32F437xx) || \
+    defined(STM32F439xx) || \
+    defined(STM32F469xx) || \
+    defined(STM32F479xx)
+    TIM_8_CH4_PI2     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_3  ),
+    TIM_8_CH1_PI5     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_3  ),
+    TIM_8_CH2_PI6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_3  ),
     TIM_8_CH3_PI7     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_3  ),
 #endif
-    TIM_8_CH4_PC9     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_8  , GPIO_PORT_C , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOI)
-    TIM_8_CH4_PI2     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_4 , TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_3  ),
-#endif
-#endif
-    /*---------------------------- Timer 9 pins ----------------------------*/
-#ifdef TIM9
+#endif /* TIM8 */
+
     TIM_9_CH1_PA2     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_9  , GPIO_PORT_A , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOE)
-    TIM_9_CH1_PE5     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_9  , GPIO_PORT_E , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_3  ),
-#endif
     TIM_9_CH2_PA3     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_9  , GPIO_PORT_A , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOE)
+#if defined(STM32F410Rx)
+    TIM_9_CH1_PC4      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_9  , GPIO_PORT_C , GPIO_PIN_ID_4  , GPIO_ALT_FUNC_3  ),
+    TIM_9_CH2_PC5      = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_9  , GPIO_PORT_C , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_3  ),
+#endif
+#if !defined(STM32F410Cx) && \
+    !defined(STM32F410Rx) && \
+    !defined(STM32F410Tx) && \
+    !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
+    TIM_9_CH1_PE5     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_9  , GPIO_PORT_E , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_3  ),
     TIM_9_CH2_PE6     = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_9  , GPIO_PORT_E , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_3  ),
 #endif
-#endif
-    /*---------------------------- Timer 10 pins ---------------------------*/
-#ifdef TIM10
+
+#if defined(TIM10)
     TIM_10_CH1_PB8    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_10 , GPIO_PORT_B , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOF)
+#if !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx) && \
+    !defined(STM32F412Vx) && \
+    !defined(STM32F401xC) && \
+    !defined(STM32F401xE) && \
+    !defined(STM32F411xE)
     TIM_10_CH1_PF6    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_10 , GPIO_PORT_F , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_3  ),
 #endif
-#endif
-    /*---------------------------- Timer 11 pins ---------------------------*/
-#ifdef TIM11
+#endif /* TIM10 */
+
+#if !defined(STM32F410Tx)
     TIM_11_CH1_PB9    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_11 , GPIO_PORT_B , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOF)
+#endif
+#if defined(STM32F410Rx)
+    TIM_11_CH1_PC12    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_11 , GPIO_PORT_C , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_3  ),
+#endif
+#if !defined(STM32F410Cx) && \
+    !defined(STM32F410Rx) && \
+    !defined(STM32F410Tx) && \
+    !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx) && \
+    !defined(STM32F412Vx) && \
+    !defined(STM32F401xC) && \
+    !defined(STM32F401xE) && \
+    !defined(STM32F411xE)
     TIM_11_CH1_PF7    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_11 , GPIO_PORT_F , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_3  ),
 #endif
-#endif
-    /*---------------------------- Timer 12 pins ---------------------------*/
-#ifdef TIM12
+
+#if defined(TIM12)
     TIM_12_CH1_PB14   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_12 , GPIO_PORT_B , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_9  ),
-#if defined (GPIOH)
-    TIM_12_CH1_PH6    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_12 , GPIO_PORT_H , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_9  ),
-#endif
     TIM_12_CH2_PB15   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_12 , GPIO_PORT_B , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_9  ),
-#if defined (GPIOH)
+#if defined(STM32F407xx) || \
+    defined(STM32F417xx) || \
+    defined(STM32F427xx) || \
+    defined(STM32F429xx) || \
+    defined(STM32F437xx) || \
+    defined(STM32F439xx) || \
+    defined(STM32F469xx) || \
+    defined(STM32F479xx)
+    TIM_12_CH1_PH6    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_12 , GPIO_PORT_H , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_9  ),
     TIM_12_CH2_PH9    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_12 , GPIO_PORT_H , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_9  ),
 #endif
-#endif
-    /*---------------------------- Timer 13 pins ---------------------------*/
-#ifdef TIM13
+#endif /* TIM12 */
+
+#if defined(TIM13)
     TIM_13_CH1_PA6    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_13 , GPIO_PORT_A , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_9  ),
-#if defined (GPIOF)
+#if !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx) && \
+    !defined(STM32F412Vx)
     TIM_13_CH1_PF8    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_13 , GPIO_PORT_F , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_9  ),
 #endif
-#endif
-    /*---------------------------- Timer 14 pins ---------------------------*/
-#ifdef TIM14
+#endif /* TIM13 */
+
+#if defined(TIM14)
     TIM_14_CH1_PA7    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_14 , GPIO_PORT_A , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_9  ),
-#if defined (GPIOF)
+#if !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx) && \
+    !defined(STM32F412Vx)
     TIM_14_CH1_PF9    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_14 , GPIO_PORT_F , GPIO_PIN_ID_9  , GPIO_ALT_FUNC_9  ),
 #endif
-#endif
+#endif /* TIM14 */
+
     TIM_CH_PIN_UNUSED = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_CNT, TIM_PERIPH_CNT, GPIO_PORT_CNT, GPIO_PIN_ID_CNT, GPIO_ALT_FUNC_CNT )
 }   tim_IoPin_t;
 
@@ -1170,42 +1374,45 @@ typedef enum
 /** \brief Enumeration of all possible Negative Channel inputs/outputs (ChN) */
 typedef enum
 {
-    /*---------------------------- Timer 1 pins ----------------------------*/
-#ifdef TIM1
+#if !defined(STM32F410Tx)
     TIM_1_CH1N_PA7    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_A , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_1  ),
-    TIM_1_CH1N_PB13   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
-    TIM_1_CH1N_PE8    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_1  ),
-#endif
     TIM_1_CH2N_PB0    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_1  ),
-    TIM_1_CH2N_PB14   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
-    TIM_1_CH2N_PE10   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_1  ),
-#endif
     TIM_1_CH3N_PB1    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_1  , GPIO_ALT_FUNC_1  ),
+    TIM_1_CH1N_PB13   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_1  ),
+    TIM_1_CH2N_PB14   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_1  ),
     TIM_1_CH3N_PB15   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
+#endif
+#if !defined(STM32F410Cx) && \
+    !defined(STM32F410Rx) && \
+    !defined(STM32F410Tx) && \
+    !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
+    TIM_1_CH1N_PE8    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_1  ),
+    TIM_1_CH2N_PE10   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_1  ),
     TIM_1_CH3N_PE12   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_1  ),
 #endif
-#endif
-    /*---------------------------- Timer 8 pins ----------------------------*/
-#ifdef TIM8
+
+#if defined(TIM8)
     TIM_8_CH1N_PA5    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_8  , GPIO_PORT_A , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_3  ),
     TIM_8_CH1N_PA7    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_8  , GPIO_PORT_A , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOH)
-    TIM_8_CH1N_PH13   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_8  , GPIO_PORT_H , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_3  ),
-#endif
     TIM_8_CH2N_PB0    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_B , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_3  ),
-    TIM_8_CH2N_PB14   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_B , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOH)
-    TIM_8_CH2N_PH14   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_H , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_3  ),
-#endif
     TIM_8_CH3N_PB1    = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_8  , GPIO_PORT_B , GPIO_PIN_ID_1  , GPIO_ALT_FUNC_3  ),
+    TIM_8_CH2N_PB14   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_B , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_3  ),
     TIM_8_CH3N_PB15   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_8  , GPIO_PORT_B , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOH)
+#if defined(STM32F407xx) || \
+    defined(STM32F417xx) || \
+    defined(STM32F427xx) || \
+    defined(STM32F429xx) || \
+    defined(STM32F437xx) || \
+    defined(STM32F439xx) || \
+    defined(STM32F469xx) || \
+    defined(STM32F479xx)
+    TIM_8_CH1N_PH13   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1 , TIM_PERIPH_8  , GPIO_PORT_H , GPIO_PIN_ID_13 , GPIO_ALT_FUNC_3  ),
+    TIM_8_CH2N_PH14   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_2 , TIM_PERIPH_8  , GPIO_PORT_H , GPIO_PIN_ID_14 , GPIO_ALT_FUNC_3  ),
     TIM_8_CH3N_PH15   = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_3 , TIM_PERIPH_8  , GPIO_PORT_H , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_3  ),
 #endif
-#endif
+#endif /* TIM8 */
+
     TIM_CH_N_PIN_UNUSED = TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_CNT, TIM_PERIPH_CNT, GPIO_PORT_CNT, GPIO_PIN_ID_CNT, GPIO_ALT_FUNC_CNT )
 }   tim_IOComplPin_t;
 
@@ -1213,19 +1420,37 @@ typedef enum
 /** \brief Enumeration of all possible Break Input (BKIN) timers inputs */
 typedef enum
 {
-#ifdef TIM1
+#if !defined(STM32F410Tx)
     TIM_1_BKIN_PA6    = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_1  , GPIO_PORT_A , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_1  ),
+#endif
     TIM_1_BKIN_PB12   = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_1  , GPIO_PORT_B , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
+#if !defined(STM32F410Cx) && \
+    !defined(STM32F410Rx) && \
+    !defined(STM32F410Tx) && \
+    !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
     TIM_1_BKIN_PE15   = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_1  ),
 #endif
-#endif
-#ifdef TIM8
+
+#if defined(TIM8)
     TIM_8_BKIN_PA6    = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_8  , GPIO_PORT_A , GPIO_PIN_ID_6  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOI)
+#if defined(STM32F412Zx) || \
+    defined(STM32F413xx) || \
+    defined(STM32F423xx)
+    TIM_8_BKIN_PF12    = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_8  , GPIO_PORT_F , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_3  ),
+#endif
+#if defined(STM32F407xx) || \
+    defined(STM32F417xx) || \
+    defined(STM32F427xx) || \
+    defined(STM32F429xx) || \
+    defined(STM32F437xx) || \
+    defined(STM32F439xx) || \
+    defined(STM32F469xx) || \
+    defined(STM32F479xx)
     TIM_8_BKIN_PI4    = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_4  , GPIO_ALT_FUNC_3  ),
 #endif
-#endif
+#endif /* TIM8 */
+
     TIM_BKIN_PIN_UNUSED = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_CNT, GPIO_PORT_CNT, GPIO_PIN_ID_CNT, GPIO_ALT_FUNC_CNT )
 }   tim_BkinPin_t;
 
@@ -1233,6 +1458,7 @@ typedef enum
 /** \brief Enumeration of Break Input 2 (BKIN2) timers inputs (not available on STM32F4) */
 typedef enum
 {
+
     TIM_BKIN2_PIN_UNUSED = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_CNT, GPIO_PORT_CNT, GPIO_PIN_ID_CNT, GPIO_ALT_FUNC_CNT )
 }   tim_Bkin2Pin_t;
 
@@ -1240,33 +1466,61 @@ typedef enum
 /** \brief Enumeration of all possible External Trigger (ETR) timers inputs */
 typedef enum
 {
-#ifdef TIM1
     TIM_1_ETR_PA12    = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_1  , GPIO_PORT_A , GPIO_PIN_ID_12 , GPIO_ALT_FUNC_1  ),
-#if defined (GPIOE)
+#if !defined(STM32F410Cx) && \
+    !defined(STM32F410Rx) && \
+    !defined(STM32F410Tx) && \
+    !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
     TIM_1_ETR_PE7     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_1  , GPIO_PORT_E , GPIO_PIN_ID_7  , GPIO_ALT_FUNC_1  ),
 #endif
+#if defined(STM32F412Zx) || \
+    defined(STM32F413xx) || \
+    defined(STM32F423xx)
+    TIM_1_ETR_PF10     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_1  , GPIO_PORT_F , GPIO_PIN_ID_10 , GPIO_ALT_FUNC_1  ),
 #endif
-#ifdef TIM2
+
+#if defined(TIM2)
     TIM_2_ETR_PA0     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_1  ),
     TIM_2_ETR_PA5     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_5  , GPIO_ALT_FUNC_1  ),
     TIM_2_ETR_PA15    = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_2  , GPIO_PORT_A , GPIO_PIN_ID_15 , GPIO_ALT_FUNC_1  ),
+#if defined(STM32F446xx)
+    TIM_2_ETR_PB8      = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_2  , GPIO_PORT_B , GPIO_PIN_ID_8  , GPIO_ALT_FUNC_1  ),
 #endif
-#ifdef TIM3
-#if defined (GPIOD)
+#endif /* TIM2 */
+
+#if defined(TIM3)
+#if !defined(STM32F412Cx)
     TIM_3_ETR_PD2     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_3  , GPIO_PORT_D , GPIO_PIN_ID_2  , GPIO_ALT_FUNC_2  ),
 #endif
-#endif
-#ifdef TIM4
-#if defined (GPIOE)
+#endif /* TIM3 */
+
+#if defined(TIM4)
+#if !defined(STM32F412Cx) && \
+    !defined(STM32F412Rx)
     TIM_4_ETR_PE0     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_4  , GPIO_PORT_E , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_2  ),
 #endif
-#endif
-#ifdef TIM8
+#endif /* TIM4 */
+
+#if defined(TIM8)
     TIM_8_ETR_PA0     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_8  , GPIO_PORT_A , GPIO_PIN_ID_0  , GPIO_ALT_FUNC_3  ),
-#if defined (GPIOI)
+#if defined(STM32F412Zx) || \
+    defined(STM32F413xx) || \
+    defined(STM32F423xx)
+    TIM_8_ETR_PF11     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_8  , GPIO_PORT_F , GPIO_PIN_ID_11 , GPIO_ALT_FUNC_3  ),
+#endif
+#if defined(STM32F407xx) || \
+    defined(STM32F417xx) || \
+    defined(STM32F427xx) || \
+    defined(STM32F429xx) || \
+    defined(STM32F437xx) || \
+    defined(STM32F439xx) || \
+    defined(STM32F469xx) || \
+    defined(STM32F479xx)
     TIM_8_ETR_PI3     = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_8  , GPIO_PORT_I , GPIO_PIN_ID_3  , GPIO_ALT_FUNC_3  ),
 #endif
-#endif
+#endif /* TIM8 */
+
     TIM_ETR_PIN_UNUSED = TIM_TIMER_PIN_BIT_MASK_ENCODE( TIM_PERIPH_CNT, GPIO_PORT_CNT, GPIO_PIN_ID_CNT, GPIO_ALT_FUNC_CNT )
 }   tim_EtrPin_t;
 

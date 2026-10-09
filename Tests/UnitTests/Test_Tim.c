@@ -10,7 +10,8 @@
  * handling.
  *
  * Tests use timers of STM32F407 (TIM1 advanced, TIM2 / TIM5 32-bit general
- * purpose, TIM3 16-bit general purpose, TIM6 basic, TIM9 / TIM11 general purpose
+ * purpose, TIM3 16-bit general purpose - TIM5 as the general purpose timer and TIM1 as
+ * the other timer on STM32F410 without TIM2 / TIM3, TIM6 basic, TIM9 / TIM11 general purpose
  * with shared interrupt lines). Functions of features not available on STM32F4
  * timers are tested to return error without register access.
  *
@@ -83,11 +84,82 @@ static void                 Ut_Tim_BreakCallback        ( void );
 /** Count of channels with capture / compare interrupt callback */
 #define UT_TIM_CC_CALLBACK_CNT              ( 4u )
 
-/** Invalid trigger input (not a TS field value, TS = 111 is ETRF on STM32F4) */
-#define UT_TIM_INVALID_TRIGGER              ( (tim_ExtClkSource_t)0x0Fu )
+/** Invalid trigger input (item of the general purpose timer with a code that is not an SMCR.TS selection) */
+#define UT_TIM_INVALID_TRIGGER              ( (tim_ExtClkSource_t)TIM_TRIGGER_INPUT_BIT_MASK_ENCODE( UT_TIM_GP_PERIPH, 0x0Fu ) )
+
+/** Trigger input of another timer (TI1FP1 of TIM1) - refused for the general purpose timer */
+#define UT_TIM_FOREIGN_TRIGGER              ( TIM_TRIGGER_INPUT_TIM1_TI1FP1 )
+
+/** Trigger inputs TI1FP1 / TI2FP2 of the general purpose timer of the tests (valid on every device) */
+#if defined(TIM3)
+#define UT_TIM_GP_TRG_TI1FP1                ( TIM_TRIGGER_INPUT_TIM3_TI1FP1 )
+#define UT_TIM_GP_TRG_TI2FP2                ( TIM_TRIGGER_INPUT_TIM3_TI2FP2 )
+#else
+#define UT_TIM_GP_TRG_TI1FP1                ( TIM_TRIGGER_INPUT_TIM5_TI1FP1 )
+#define UT_TIM_GP_TRG_TI2FP2                ( TIM_TRIGGER_INPUT_TIM5_TI2FP2 )
+#endif
 
 /** Invalid input polarity (CCxNP without CCxP) */
 #define UT_TIM_INVALID_IC_POLARITY          ( (tim_InputPolarity_t)TIM_CCER_CC1NP )
+
+/** TIM1_CH1N on PA7 (alternate function 1) - the code is built by the encoding macro, the item of the pin table does not exist on STM32F410Tx */
+#define UT_TIM_1_CH1N_PA7                   ( (tim_IOComplPin_t)TIM_CHANNEL_PIN_BIT_MASK_ENCODE( TIM_CHANNEL_1, TIM_PERIPH_1, GPIO_PORT_A, GPIO_PIN_ID_7, GPIO_ALT_FUNC_1 ) )
+
+/** General purpose timer of the tests: TIM3 (16-bit, 4 channels), TIM5 on MCUs without TIM3 (STM32F410) */
+#if defined(TIM3)
+    #define UT_TIM_GP_PERIPH                ( TIM_PERIPH_3 )
+    #define UT_TIM_GP_REG                   ( TIM3 )
+    #define UT_TIM_GP_RCC                   ( RCC_PERIPH_TIM3 )
+    #define UT_TIM_GP_IRQ                   ( NVIC_PERIPH_IRQ_TIM3 )
+    #define UT_TIM_GP_CH1_PIN               ( TIM_3_CH1_PA6 )
+    #define UT_TIM_GP_CH1_PORT              ( GPIO_PORT_A )
+    #define UT_TIM_GP_CH1_PIN_ID            ( GPIO_PIN_ID_6 )
+#else
+    #define UT_TIM_GP_PERIPH                ( TIM_PERIPH_5 )
+    #define UT_TIM_GP_REG                   ( TIM5 )
+    #define UT_TIM_GP_RCC                   ( RCC_PERIPH_TIM5 )
+    #define UT_TIM_GP_IRQ                   ( NVIC_PERIPH_IRQ_TIM5 )
+    #define UT_TIM_GP_CH1_PIN               ( TIM_5_CH1_PA0 )
+    #define UT_TIM_GP_CH1_PORT              ( GPIO_PORT_A )
+    #define UT_TIM_GP_CH1_PIN_ID            ( GPIO_PIN_ID_0 )
+#endif /* TIM3 */
+
+/** 16-bit timer of the tests (counter resolution limit): TIM3, TIM1 on MCUs without TIM3 (STM32F410) */
+#if defined(TIM3)
+    #define UT_TIM_16B_PERIPH               ( TIM_PERIPH_3 )
+    #define UT_TIM_16B_REG                  ( TIM3 )
+    #define UT_TIM_16B_RCC                  ( RCC_PERIPH_TIM3 )
+#else
+    #define UT_TIM_16B_PERIPH               ( TIM_PERIPH_1 )
+    #define UT_TIM_16B_REG                  ( TIM1 )
+    #define UT_TIM_16B_RCC                  ( RCC_PERIPH_TIM1 )
+#endif /* TIM3 */
+
+/** 32-bit timer of the tests (full range counter / compare value): TIM2, TIM5 on MCUs without TIM2 */
+#if defined(TIM2)
+    #define UT_TIM_32B_PERIPH               ( TIM_PERIPH_2 )
+    #define UT_TIM_32B_REG                  ( TIM2 )
+    #define UT_TIM_OTHER_PERIPH             ( TIM_PERIPH_2 )
+    #define UT_TIM_OTHER_REG                ( TIM2 )
+    #define UT_TIM_ETR_PIN                  ( TIM_2_ETR_PA15 )
+    #define UT_TIM_ETR_PIN_ID               ( GPIO_PIN_ID_15 )
+#else
+    #define UT_TIM_32B_PERIPH               ( TIM_PERIPH_5 )
+    #define UT_TIM_32B_REG                  ( TIM5 )
+    #define UT_TIM_OTHER_PERIPH             ( TIM_PERIPH_1 )
+    #define UT_TIM_OTHER_REG                ( TIM1 )
+    #define UT_TIM_ETR_PIN                  ( TIM_1_ETR_PA12 )
+    #define UT_TIM_ETR_PIN_ID               ( GPIO_PIN_ID_12 )
+#endif /* TIM2 */
+
+/** Timer with one channel and without slave mode controller (TIM10, TIM11 on MCUs without TIM10) and the TIM1 update interrupt line */
+#if defined(TIM10)
+    #define UT_TIM_1CH_PERIPH               ( TIM_PERIPH_10 )
+    #define UT_TIM_TIM1_UP_IRQ              ( NVIC_PERIPH_IRQ_TIM1_UP_TIM10 )
+#else
+    #define UT_TIM_1CH_PERIPH               ( TIM_PERIPH_11 )
+    #define UT_TIM_TIM1_UP_IRQ              ( NVIC_PERIPH_IRQ_TIM1_UP )
+#endif /* TIM10 */
 
 /* ============================== MACROS ==================================== */
 
@@ -124,13 +196,13 @@ static tim_OvercaptureFlag_t utTim_LastOvercapture;
 /** NVIC lines of TIM1 in order of processing by the module (update, CC, trigger / commutation, break - shared with TIM10 / TIM11 / TIM9) */
 static const nvic_PeriphIrqList_t utTim_Tim1IrqLines[ UT_TIM_IRQ_LINE_CNT ] =
 {
-    NVIC_PERIPH_IRQ_TIM1_UP_TIM10, NVIC_PERIPH_IRQ_TIM1_CC, NVIC_PERIPH_IRQ_TIM1_TRG_COM_TIM11, NVIC_PERIPH_IRQ_TIM1_BRK_TIM9
+    UT_TIM_TIM1_UP_IRQ, NVIC_PERIPH_IRQ_TIM1_CC, NVIC_PERIPH_IRQ_TIM1_TRG_COM_TIM11, NVIC_PERIPH_IRQ_TIM1_BRK_TIM9
 };
 
 /** NVIC lines of TIM3 (all interrupt groups share the global line) */
 static const nvic_PeriphIrqList_t utTim_Tim3IrqLines[ UT_TIM_IRQ_LINE_CNT ] =
 {
-    NVIC_PERIPH_IRQ_TIM3, NVIC_PERIPH_IRQ_TIM3, NVIC_PERIPH_IRQ_TIM3, NVIC_PERIPH_IRQ_TIM3
+    UT_TIM_GP_IRQ, UT_TIM_GP_IRQ, UT_TIM_GP_IRQ, UT_TIM_GP_IRQ
 };
 
 /* ============================ TEST FIXTURE ================================ */
@@ -199,7 +271,7 @@ void Ut_Tim_Task_DoesNotAccessPeripherals( void )
     /* No mock call expected - strict mocks fail on any call */
     Tim_Task();
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
 }
 
 /* =========================== DEFAULT CONFIG =============================== */
@@ -269,9 +341,9 @@ void Ut_Tim_Get_DefaultConfig_NullPtr_ReturnsError( void )
  */
 void Ut_Tim_Start_EnablesCounter( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( TIM_PERIPH_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( UT_TIM_GP_PERIPH ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_CEN, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_CEN, UT_TIM_GP_REG->CR1 );
 }
 
 
@@ -286,11 +358,11 @@ void Ut_Tim_Start_EnablesCounter( void )
 void Ut_Tim_Start_OnePulseMode_ReturnsOkWithoutReadBack( void )
 {
     /* Counter enable is cleared by HW at the end of the pulse - it is not verified */
-    TIM3->CR1 = TIM_CR1_OPM;
+    UT_TIM_GP_REG->CR1 = TIM_CR1_OPM;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( TIM_PERIPH_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( UT_TIM_GP_PERIPH ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_OPM | TIM_CR1_CEN, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_OPM | TIM_CR1_CEN, UT_TIM_GP_REG->CR1 );
 }
 
 
@@ -316,13 +388,13 @@ void Ut_Tim_Start_InvalidPeriph_ReturnsError( void )
  */
 void Ut_Tim_Stop_DisablesCounterAndResetsCounterValue( void )
 {
-    TIM3->CR1 = TIM_CR1_CEN | TIM_CR1_ARPE;
-    TIM3->CNT = 0x1234u;
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN | TIM_CR1_ARPE;
+    UT_TIM_GP_REG->CNT = 0x1234u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Stop( TIM_PERIPH_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Stop( UT_TIM_GP_PERIPH ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_ARPE, TIM3->CR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CNT );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_ARPE, UT_TIM_GP_REG->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CNT );
 }
 
 
@@ -336,13 +408,13 @@ void Ut_Tim_Stop_DisablesCounterAndResetsCounterValue( void )
  */
 void Ut_Tim_Pause_DisablesCounterAndKeepsCounterValue( void )
 {
-    TIM3->CR1 = TIM_CR1_CEN;
-    TIM3->CNT = 0x1234u;
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
+    UT_TIM_GP_REG->CNT = 0x1234u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( TIM_PERIPH_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( UT_TIM_GP_PERIPH ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0x1234u, TIM3->CNT );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0x1234u, UT_TIM_GP_REG->CNT );
 }
 
 
@@ -371,12 +443,12 @@ void Ut_Tim_Get_PeriphState_ReadsCounterEnable( void )
 {
     tim_FunctionState_t periphState = TIM_FUNCTION_INACTIVE;
 
-    TIM2->CR1 = TIM_CR1_CEN;
+    UT_TIM_OTHER_REG->CR1 = TIM_CR1_CEN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PeriphState( TIM_PERIPH_2, &periphState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PeriphState( UT_TIM_OTHER_PERIPH, &periphState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, periphState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PeriphState( TIM_PERIPH_3, &periphState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PeriphState( UT_TIM_GP_PERIPH, &periphState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_INACTIVE, periphState );
 }
 
@@ -394,7 +466,7 @@ void Ut_Tim_Get_PeriphState_InvalidArgs_ReturnsError( void )
     tim_FunctionState_t periphState = TIM_FUNCTION_INACTIVE;
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_PeriphState( TIM_PERIPH_CNT, &periphState ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_PeriphState( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_PeriphState( UT_TIM_GP_PERIPH, NULL ) );
 }
 
 /* ============================ INTERNAL CLOCK ============================== */
@@ -411,11 +483,11 @@ void Ut_Tim_Set_ClkInternal_ExactDivider_WritesPrescaler( void )
 {
     tim_FreqHz_t trueFreq = 0u;
 
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClkInternal( TIM_PERIPH_3, 1000000u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClkInternal( UT_TIM_GP_PERIPH, 1000000u, &trueFreq ) );
 
-    TEST_ASSERT_EQUAL_HEX32( UT_TIM_PSC_1MHZ, TIM3->PSC );
+    TEST_ASSERT_EQUAL_HEX32( UT_TIM_PSC_1MHZ, UT_TIM_GP_REG->PSC );
     TEST_ASSERT_EQUAL_UINT32( 1000000u, trueFreq );
 }
 
@@ -433,11 +505,11 @@ void Ut_Tim_Set_ClkInternal_InexactDivider_RoundsToNearest( void )
     tim_FreqHz_t trueFreq = 0u;
 
     /* 250 MHz / 3 MHz = 83.3 -> divider 83 */
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClkInternal( TIM_PERIPH_3, 3000000u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClkInternal( UT_TIM_GP_PERIPH, 3000000u, &trueFreq ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 82u, TIM3->PSC );
+    TEST_ASSERT_EQUAL_HEX32( 82u, UT_TIM_GP_REG->PSC );
     TEST_ASSERT_EQUAL_UINT32( UT_TIM_CLK_HZ / 83u, trueFreq );
 }
 
@@ -456,11 +528,11 @@ void Ut_Tim_Set_ClkInternal_FrequencyTooLow_ReturnsErrorWithoutWrite( void )
     tim_FreqHz_t trueFreq = 0u;
 
     /* Divider 250000000 does not fit 16-bit prescaler */
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( TIM_PERIPH_3, 1u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( UT_TIM_GP_PERIPH, 1u, &trueFreq ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->PSC );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->PSC );
 }
 
 
@@ -476,9 +548,9 @@ void Ut_Tim_Set_ClkInternal_FrequencyAboveKernelClock_ReturnsError( void )
 {
     tim_FreqHz_t trueFreq = 0u;
 
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( TIM_PERIPH_3, UT_TIM_CLK_HZ + 1u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( UT_TIM_GP_PERIPH, UT_TIM_CLK_HZ + 1u, &trueFreq ) );
 }
 
 
@@ -494,12 +566,12 @@ void Ut_Tim_Set_ClkInternal_RccError_ReturnsErrorWithoutWrite( void )
 {
     tim_FreqHz_t trueFreq = 0u;
 
-    Rcc_Get_PeriphClk_ExpectAndReturn( RCC_PERIPH_TIM3, NULL, RCC_REQUEST_ERROR );
+    Rcc_Get_PeriphClk_ExpectAndReturn( UT_TIM_GP_RCC, NULL, RCC_REQUEST_ERROR );
     Rcc_Get_PeriphClk_IgnoreArg_periphClk();
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( TIM_PERIPH_3, 1000000u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( UT_TIM_GP_PERIPH, 1000000u, &trueFreq ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->PSC );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->PSC );
 }
 
 
@@ -517,8 +589,8 @@ void Ut_Tim_Set_ClkInternal_InvalidArgs_ReturnsErrorWithoutRccAccess( void )
     tim_FreqHz_t trueFreq = 0u;
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( TIM_PERIPH_CNT, 1000000u, &trueFreq ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( TIM_PERIPH_3,   0u,       &trueFreq ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( TIM_PERIPH_3,   1000000u, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( UT_TIM_GP_PERIPH,   0u,       &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClkInternal( UT_TIM_GP_PERIPH,   1000000u, NULL ) );
 }
 
 
@@ -534,10 +606,10 @@ void Ut_Tim_Get_ClkInternal_CalculatesCounterFrequency( void )
 {
     tim_FreqHz_t timFreq = 0u;
 
-    TIM3->PSC = UT_TIM_PSC_10MHZ;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_GP_REG->PSC = UT_TIM_PSC_10MHZ;
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClkInternal( TIM_PERIPH_3, &timFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClkInternal( UT_TIM_GP_PERIPH, &timFreq ) );
     TEST_ASSERT_EQUAL_UINT32( 10000000u, timFreq );
 }
 
@@ -550,7 +622,7 @@ void Ut_Tim_Get_ClkInternal_CalculatesCounterFrequency( void )
  */
 void Ut_Tim_Get_ClkInternal_NullPtr_ReturnsError( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_ClkInternal( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_ClkInternal( UT_TIM_GP_PERIPH, NULL ) );
 }
 
 
@@ -567,13 +639,13 @@ void Ut_Tim_Get_TimStepTime_MinAndMax( void )
 {
     tim_Time_ns_t stepTime = 0u;
 
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_TimStepTimeMin( TIM_PERIPH_3, &stepTime ) );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_TimStepTimeMin( UT_TIM_GP_PERIPH, &stepTime ) );
     TEST_ASSERT_EQUAL_UINT32( 4u, stepTime );
 
     /* Prescaler divider 65536 */
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_TimStepTimeMax( TIM_PERIPH_3, &stepTime ) );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_TimStepTimeMax( UT_TIM_GP_PERIPH, &stepTime ) );
     TEST_ASSERT_EQUAL_UINT32( 262144u, stepTime );
 }
 
@@ -591,9 +663,9 @@ void Ut_Tim_Get_TimStepTimeMax_NotRepresentable_ReturnsError( void )
     tim_Time_ns_t stepTime = 0u;
 
     /* 65536 s at 1 Hz kernel clock does not fit into nanoseconds (32-bit) */
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, 1u );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, 1u );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_TimStepTimeMax( TIM_PERIPH_3, &stepTime ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_TimStepTimeMax( UT_TIM_GP_PERIPH, &stepTime ) );
 }
 
 /* ============================ COUNTER, PERIOD ============================= */
@@ -608,9 +680,9 @@ void Ut_Tim_Get_TimStepTimeMax_NotRepresentable_ReturnsError( void )
  */
 void Ut_Tim_Set_Counter_StoppedTimer_WritesCounter( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( TIM_PERIPH_3, 0x1234u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( UT_TIM_GP_PERIPH, 0x1234u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0x1234u, TIM3->CNT );
+    TEST_ASSERT_EQUAL_HEX32( 0x1234u, UT_TIM_GP_REG->CNT );
 }
 
 
@@ -624,11 +696,11 @@ void Ut_Tim_Set_Counter_StoppedTimer_WritesCounter( void )
  */
 void Ut_Tim_Set_Counter_RunningTimer_WritesCounterWithoutReadBack( void )
 {
-    TIM3->CR1 = TIM_CR1_CEN;
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( TIM_PERIPH_3, 0x55u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( UT_TIM_GP_PERIPH, 0x55u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0x55u, TIM3->CNT );
+    TEST_ASSERT_EQUAL_HEX32( 0x55u, UT_TIM_GP_REG->CNT );
 }
 
 
@@ -642,9 +714,9 @@ void Ut_Tim_Set_Counter_RunningTimer_WritesCounterWithoutReadBack( void )
  */
 void Ut_Tim_Set_Counter_32BitTimer_AcceptsFullRange( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( TIM_PERIPH_2, 0x89ABCDEFu ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( UT_TIM_32B_PERIPH, 0x89ABCDEFu ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0x89ABCDEFu, TIM2->CNT );
+    TEST_ASSERT_EQUAL_HEX32( 0x89ABCDEFu, UT_TIM_32B_REG->CNT );
 }
 
 
@@ -658,9 +730,9 @@ void Ut_Tim_Set_Counter_32BitTimer_AcceptsFullRange( void )
  */
 void Ut_Tim_Set_Counter_ValueAboveResolution_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Counter( TIM_PERIPH_3, UT_TIM_16BIT_MAX + 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Counter( UT_TIM_16B_PERIPH, UT_TIM_16BIT_MAX + 1u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CNT );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->CNT );
 }
 
 
@@ -677,12 +749,12 @@ void Ut_Tim_Get_Counter_ReadsCounter( void )
 {
     tim_Counter_t counterValue = 0u;
 
-    TIM3->CNT = 0x4321u;
+    UT_TIM_GP_REG->CNT = 0x4321u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( TIM_PERIPH_3, &counterValue ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( UT_TIM_GP_PERIPH, &counterValue ) );
     TEST_ASSERT_EQUAL_HEX32( 0x4321u, counterValue );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_Counter( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_Counter( UT_TIM_GP_PERIPH, NULL ) );
 }
 
 
@@ -698,11 +770,11 @@ void Ut_Tim_Set_Period_WritesAutoReload( void )
 {
     tim_Counter_t autoreloadValue = 0u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Period( TIM_PERIPH_3, 999u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Period( UT_TIM_GP_PERIPH, 999u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 999u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 999u, UT_TIM_GP_REG->ARR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Period( TIM_PERIPH_3, &autoreloadValue ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Period( UT_TIM_GP_PERIPH, &autoreloadValue ) );
     TEST_ASSERT_EQUAL_UINT32( 999u, autoreloadValue );
 }
 
@@ -717,10 +789,10 @@ void Ut_Tim_Set_Period_WritesAutoReload( void )
  */
 void Ut_Tim_Set_Period_ValueAboveResolution_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Period( TIM_PERIPH_3, UT_TIM_16BIT_MAX + 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Period( UT_TIM_16B_PERIPH, UT_TIM_16BIT_MAX + 1u ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Period( TIM_PERIPH_CNT, 1u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->ARR );
 }
 
 
@@ -736,12 +808,12 @@ void Ut_Tim_Set_RefreshFreq_InternalClock_WritesAutoReload( void )
 {
     tim_FreqHz_t trueFreq = 0u;
 
-    TIM3->PSC = UT_TIM_PSC_10MHZ;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_GP_REG->PSC = UT_TIM_PSC_10MHZ;
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_RefreshFreq( TIM_PERIPH_3, 1000u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_RefreshFreq( UT_TIM_GP_PERIPH, 1000u, &trueFreq ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 9999u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 9999u, UT_TIM_GP_REG->ARR );
     TEST_ASSERT_EQUAL_UINT32( 1000u, trueFreq );
 }
 
@@ -760,12 +832,12 @@ void Ut_Tim_Set_RefreshFreq_PeriodAboveResolution_ReturnsError( void )
     tim_FreqHz_t trueFreq = 0u;
 
     /* 10 MHz / 100 Hz = 100000 steps > 16-bit */
-    TIM3->PSC = UT_TIM_PSC_10MHZ;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_16B_REG->PSC = UT_TIM_PSC_10MHZ;
+    Ut_Tim_Expect_PeriphClk( UT_TIM_16B_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_RefreshFreq( TIM_PERIPH_3, 100u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_RefreshFreq( UT_TIM_16B_PERIPH, 100u, &trueFreq ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->ARR );
 }
 
 
@@ -781,9 +853,9 @@ void Ut_Tim_Set_RefreshFreq_ExternalClock_ReturnsErrorWithoutRccAccess( void )
 {
     tim_FreqHz_t trueFreq = 0u;
 
-    TIM3->SMCR = TIM_SMCR_ECE;
+    UT_TIM_GP_REG->SMCR = TIM_SMCR_ECE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_RefreshFreq( TIM_PERIPH_3, 1000u, &trueFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_RefreshFreq( UT_TIM_GP_PERIPH, 1000u, &trueFreq ) );
 }
 
 
@@ -799,11 +871,11 @@ void Ut_Tim_Get_RefreshFreq_CalculatesPeriodFrequency( void )
 {
     tim_FreqHz_t refreshFreq = 0u;
 
-    TIM3->PSC = UT_TIM_PSC_10MHZ;
-    TIM3->ARR = 9999u;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_GP_REG->PSC = UT_TIM_PSC_10MHZ;
+    UT_TIM_GP_REG->ARR = 9999u;
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_RefreshFreq( TIM_PERIPH_3, &refreshFreq ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_RefreshFreq( UT_TIM_GP_PERIPH, &refreshFreq ) );
     TEST_ASSERT_EQUAL_UINT32( 1000u, refreshFreq );
 }
 
@@ -821,11 +893,11 @@ void Ut_Tim_Set_CounterDirection_CenterAligned_WritesCounterMode( void )
 {
     tim_CounterDir_t counterDir = TIM_COUNTER_DIR_UP;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CounterDirection( TIM_PERIPH_3, TIM_COUNTER_DIR_CENTER_UP_DOWN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CounterDirection( UT_TIM_GP_PERIPH, TIM_COUNTER_DIR_CENTER_UP_DOWN ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_COUNTERMODE_CENTER_UP_DOWN, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_COUNTERMODE_CENTER_UP_DOWN, UT_TIM_GP_REG->CR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CounterDirection( TIM_PERIPH_3, &counterDir ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CounterDirection( UT_TIM_GP_PERIPH, &counterDir ) );
     TEST_ASSERT_EQUAL( TIM_COUNTER_DIR_CENTER_UP_DOWN, counterDir );
 }
 
@@ -878,11 +950,11 @@ void Ut_Tim_Set_CounterDirection_BasicTimer_UpOnly( void )
  */
 void Ut_Tim_Set_CounterDirection_RunningTimer_ReturnsErrorWithoutWrite( void )
 {
-    TIM3->CR1 = TIM_CR1_CEN;
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CounterDirection( TIM_PERIPH_3, TIM_COUNTER_DIR_DOWN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CounterDirection( UT_TIM_GP_PERIPH, TIM_COUNTER_DIR_DOWN ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_CEN, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_CEN, UT_TIM_GP_REG->CR1 );
 }
 
 
@@ -899,9 +971,9 @@ void Ut_Tim_Set_CounterDirection_InvalidArgs_ReturnsError( void )
 {
     tim_CounterDir_t counterDir = TIM_COUNTER_DIR_UP;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CounterDirection( TIM_PERIPH_3, TIM_COUNTER_DIR_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CounterDirection( UT_TIM_GP_PERIPH, TIM_COUNTER_DIR_CNT ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CounterDirection( TIM_PERIPH_CNT, TIM_COUNTER_DIR_UP ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CounterDirection( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CounterDirection( UT_TIM_GP_PERIPH, NULL ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CounterDirection( TIM_PERIPH_CNT, &counterDir ) );
 }
 
@@ -943,10 +1015,10 @@ void Ut_Tim_Set_RepetitionCounter_TimerWithoutRcr_ReturnsError( void )
 {
     tim_RepCnt_t repetitionCnt = 0u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_RepetitionCounter( TIM_PERIPH_3, 1u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_RepetitionCounter( TIM_PERIPH_3, &repetitionCnt ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_RepetitionCounter( UT_TIM_GP_PERIPH, 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_RepetitionCounter( UT_TIM_GP_PERIPH, &repetitionCnt ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->RCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->RCR );
 }
 
 
@@ -966,16 +1038,16 @@ void Ut_Tim_Set_UpdateEvent_TogglesUdis( void )
 {
     tim_FunctionState_t eventState = TIM_FUNCTION_ACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateEventInactive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_UDIS, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateEventInactive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_UDIS, UT_TIM_GP_REG->CR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_UpdateEventState( TIM_PERIPH_3, &eventState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_UpdateEventState( UT_TIM_GP_PERIPH, &eventState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_INACTIVE, eventState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateEventActive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateEventActive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_UpdateEventState( TIM_PERIPH_3, &eventState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_UpdateEventState( UT_TIM_GP_PERIPH, &eventState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, eventState );
 }
 
@@ -994,13 +1066,13 @@ void Ut_Tim_Set_UpdateSource_CounterOnly_WritesUrs( void )
 {
     tim_UpdateSource_t updateSource = TIM_UPDATE_SOURCE_ANY;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateSource( TIM_PERIPH_3, TIM_UPDATE_SOURCE_COUNTER ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_URS, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateSource( UT_TIM_GP_PERIPH, TIM_UPDATE_SOURCE_COUNTER ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_URS, UT_TIM_GP_REG->CR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_UpdateSource( TIM_PERIPH_3, &updateSource ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_UpdateSource( UT_TIM_GP_PERIPH, &updateSource ) );
     TEST_ASSERT_EQUAL( TIM_UPDATE_SOURCE_COUNTER, updateSource );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_UpdateSource( TIM_PERIPH_3, TIM_UPDATE_SOURCE_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_UpdateSource( UT_TIM_GP_PERIPH, TIM_UPDATE_SOURCE_CNT ) );
 }
 
 
@@ -1017,14 +1089,14 @@ void Ut_Tim_Set_Autoreload_TogglesArpe( void )
 {
     tim_FunctionState_t modeState = TIM_FUNCTION_INACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_AutoreloadActive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_ARPE, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_AutoreloadActive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_ARPE, UT_TIM_GP_REG->CR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_AutoreloadState( TIM_PERIPH_3, &modeState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_AutoreloadState( UT_TIM_GP_PERIPH, &modeState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, modeState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_AutoreloadInactive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_AutoreloadInactive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
 }
 
 
@@ -1043,14 +1115,14 @@ void Ut_Tim_Set_OnePulseMode_TogglesOpm( void )
 {
     tim_FunctionState_t modeState = TIM_FUNCTION_INACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OnePulseModeActive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_OPM, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OnePulseModeActive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_OPM, UT_TIM_GP_REG->CR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_OnePulseMode( TIM_PERIPH_3, &modeState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_OnePulseMode( UT_TIM_GP_PERIPH, &modeState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, modeState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OnePulseModeInactive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OnePulseModeInactive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OnePulseModeActive( TIM_PERIPH_CNT ) );
 }
@@ -1067,9 +1139,9 @@ void Ut_Tim_Set_OnePulseMode_TogglesOpm( void )
  */
 void Ut_Tim_Generate_Event_Update_WritesUg( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Generate_Event( TIM_PERIPH_3, TIM_EVENT_UPDATE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Generate_Event( UT_TIM_GP_PERIPH, TIM_EVENT_UPDATE ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_EGR_UG, TIM3->EGR );
+    TEST_ASSERT_EQUAL_HEX32( TIM_EGR_UG, UT_TIM_GP_REG->EGR );
 }
 
 
@@ -1105,9 +1177,9 @@ void Ut_Tim_Generate_Event_NotAvailable_ReturnsErrorWithoutWrite( void )
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( TIM_PERIPH_6, TIM_EVENT_CC1 ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( TIM_PERIPH_3, TIM_EVENT_COMMUTATION ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( TIM_PERIPH_3, TIM_EVENT_BREAK2 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( TIM_PERIPH_3, TIM_EVENT_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( UT_TIM_GP_PERIPH, TIM_EVENT_COMMUTATION ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( UT_TIM_GP_PERIPH, TIM_EVENT_BREAK2 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( UT_TIM_GP_PERIPH, TIM_EVENT_CNT ) );
 
     /* Break 2 does not exist on STM32F4 (not even on advanced timers) */
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Generate_Event( TIM_PERIPH_1, TIM_EVENT_BREAK2 ) );
@@ -1115,7 +1187,7 @@ void Ut_Tim_Generate_Event_NotAvailable_ReturnsErrorWithoutWrite( void )
 #if defined(TIM6)
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->EGR );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->EGR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->EGR );
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM1->EGR );
 }
 
@@ -1134,12 +1206,12 @@ void Ut_Tim_Set_ClockSource_ExternalInput_WritesTriggerAndSlaveMode( void )
 {
     tim_ClockSource_t clockSource = TIM_CLOCKSOURCE_INT_CLK;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_EXT_CLK_SOURCE_TI1FP1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, UT_TIM_GP_TRG_TI1FP1 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1FP1,             TIM3->SMCR & TIM_SMCR_TS );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_CLOCKSOURCE_EXT_MODE1, TIM3->SMCR & TIM_SMCR_SMS );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1FP1,             UT_TIM_GP_REG->SMCR & TIM_SMCR_TS );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_CLOCKSOURCE_EXT_MODE1, UT_TIM_GP_REG->SMCR & TIM_SMCR_SMS );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockSource( TIM_PERIPH_3, &clockSource ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockSource( UT_TIM_GP_PERIPH, &clockSource ) );
     TEST_ASSERT_EQUAL( TIM_CLOCKSOURCE_EXTERNAL_CH_IN, clockSource );
 }
 
@@ -1156,11 +1228,11 @@ void Ut_Tim_Set_ClockSource_Etr_WritesEce( void )
 {
     tim_ClockSource_t clockSource = TIM_CLOCKSOURCE_INT_CLK;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_TRIGGER_INPUT_UNUSED ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_SMCR_ECE, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( TIM_SMCR_ECE, UT_TIM_GP_REG->SMCR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockSource( TIM_PERIPH_3, &clockSource ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockSource( UT_TIM_GP_PERIPH, &clockSource ) );
     TEST_ASSERT_EQUAL( TIM_CLOCKSOURCE_EXTERNAL_ETR, clockSource );
 }
 
@@ -1177,13 +1249,13 @@ void Ut_Tim_Set_ClockSource_Internal_ClearsExternalClock( void )
 {
     tim_ClockSource_t clockSource = TIM_CLOCKSOURCE_EXTERNAL_ETR;
 
-    TIM3->SMCR = TIM_SMCR_ECE | LL_TIM_CLOCKSOURCE_EXT_MODE1;
+    UT_TIM_GP_REG->SMCR = TIM_SMCR_ECE | LL_TIM_CLOCKSOURCE_EXT_MODE1;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_INT_CLK, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, TIM_CLOCKSOURCE_INT_CLK, TIM_TRIGGER_INPUT_UNUSED ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockSource( TIM_PERIPH_3, &clockSource ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockSource( UT_TIM_GP_PERIPH, &clockSource ) );
     TEST_ASSERT_EQUAL( TIM_CLOCKSOURCE_INT_CLK, clockSource );
 }
 
@@ -1199,8 +1271,8 @@ void Ut_Tim_Set_ClockSource_Internal_ClearsExternalClock( void )
 void Ut_Tim_Set_ClockSource_NotAvailableOnBasicTimer_ReturnsErrorWithoutWrite( void )
 {
 #if defined(TIM6)
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_ETR,   TIM_EXT_CLK_SOURCE_ITR0 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_EXT_CLK_SOURCE_TI1FP1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_ETR,   TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_6, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_TRIGGER_INPUT_UNUSED ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->SMCR );
 #else
@@ -1220,11 +1292,13 @@ void Ut_Tim_Set_ClockSource_NotAvailableOnBasicTimer_ReturnsErrorWithoutWrite( v
  */
 void Ut_Tim_Set_ClockSource_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, UT_TIM_INVALID_TRIGGER ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, (tim_ClockSource_t)TIM_SMCR_SMS_0, TIM_EXT_CLK_SOURCE_ITR0 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_CNT, TIM_CLOCKSOURCE_INT_CLK, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, UT_TIM_INVALID_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, UT_TIM_FOREIGN_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, TIM_CLOCKSOURCE_EXTERNAL_CH_IN, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, (tim_ClockSource_t)TIM_SMCR_SMS_0, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_CNT, TIM_CLOCKSOURCE_INT_CLK, TIM_TRIGGER_INPUT_UNUSED ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -1238,11 +1312,11 @@ void Ut_Tim_Set_ClockSource_InvalidArgs_ReturnsErrorWithoutWrite( void )
  */
 void Ut_Tim_Set_ClockSource_RunningTimer_ReturnsErrorWithoutWrite( void )
 {
-    TIM3->CR1 = TIM_CR1_CEN;
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( TIM_PERIPH_3, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_EXT_CLK_SOURCE_ITR0 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockSource( UT_TIM_GP_PERIPH, TIM_CLOCKSOURCE_EXTERNAL_ETR, TIM_TRIGGER_INPUT_UNUSED ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 }
 
 /* ============================ INITIALIZATION ============================== */
@@ -1261,24 +1335,24 @@ void Ut_Tim_Set_ClockSource_RunningTimer_ReturnsErrorWithoutWrite( void )
  */
 void Ut_Tim_Init_DefaultConfig_ConfiguresTimeBase( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
-    Ut_Tim_Expect_ClockActivation( RCC_PERIPH_TIM3 );
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_ClockActivation( UT_TIM_GP_RCC );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &config ) );
 
     /* 250 MHz / 25 = 10 MHz counter clock, 10 MHz / 10 = 1 MHz refresh */
-    TEST_ASSERT_EQUAL_HEX32( UT_TIM_PSC_10MHZ, TIM3->PSC );
-    TEST_ASSERT_EQUAL_HEX32( 9u, TIM3->ARR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );     /* Up-counting, UEV enabled, no preload, stopped */
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );    /* Internal clock, slave mode disabled */
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR2 );     /* TRGO = reset */
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );    /* No channel used */
+    TEST_ASSERT_EQUAL_HEX32( UT_TIM_PSC_10MHZ, UT_TIM_GP_REG->PSC );
+    TEST_ASSERT_EQUAL_HEX32( 9u, UT_TIM_GP_REG->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );     /* Up-counting, UEV enabled, no preload, stopped */
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );    /* Internal clock, slave mode disabled */
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR2 );     /* TRGO = reset */
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );    /* No channel used */
 
     /* Update event loads preloaded prescaler, its update flag is cleared */
-    TEST_ASSERT_EQUAL_HEX32( TIM_EGR_UG, TIM3->EGR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SR & TIM_SR_UIF );
+    TEST_ASSERT_EQUAL_HEX32( TIM_EGR_UG, UT_TIM_GP_REG->EGR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SR & TIM_SR_UIF );
 }
 
 
@@ -1293,12 +1367,12 @@ void Ut_Tim_Init_DefaultConfig_ConfiguresTimeBase( void )
 void Ut_Tim_Init_ClockAlreadyActive_DoesNotReactivate( void )
 {
     static rcc_FunctionState_t clockState = RCC_FUNCTION_ACTIVE;
-    tim_PeriphConfig_t         config     = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t         config     = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
-    Rcc_Get_PeriphState_ExpectAndReturn( RCC_PERIPH_TIM3, NULL, RCC_REQUEST_OK );
+    Rcc_Get_PeriphState_ExpectAndReturn( UT_TIM_GP_RCC, NULL, RCC_REQUEST_OK );
     Rcc_Get_PeriphState_IgnoreArg_funcState();
     Rcc_Get_PeriphState_ReturnThruPtr_funcState( &clockState );
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &config ) );
 }
@@ -1316,23 +1390,23 @@ void Ut_Tim_Init_ClockAlreadyActive_DoesNotReactivate( void )
  */
 void Ut_Tim_Init_PwmChannelWithPin_ConfiguresPinAndChannel( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     config.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState = TIM_FUNCTION_ACTIVE;
     config.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode  = TIM_CHANNEL_MODE_OUTPUT_PWM;
-    config.ChannelConfig[ TIM_CHANNEL_1 ].IoPin        = TIM_3_CH1_PA6;
+    config.ChannelConfig[ TIM_CHANNEL_1 ].IoPin        = UT_TIM_GP_CH1_PIN;
 
-    Ut_Tim_Expect_ClockActivation( RCC_PERIPH_TIM3 );
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
-    Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_6, GPIO_ALT_FUNC_2, GPIO_REQUEST_OK );
+    Ut_Tim_Expect_ClockActivation( UT_TIM_GP_RCC );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_GpioInit( UT_TIM_GP_CH1_PORT, UT_TIM_GP_CH1_PIN_ID, GPIO_ALT_FUNC_2, GPIO_REQUEST_OK );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_PWM1, LL_TIM_OC_GetMode( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCMR1_OC1PE, TIM3->CCMR1 & TIM_CCMR1_OC1PE );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC1E, TIM3->CCER );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->BDTR );    /* General purpose timer has no main output */
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_PWM1, LL_TIM_OC_GetMode( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCMR1_OC1PE, UT_TIM_GP_REG->CCMR1 & TIM_CCMR1_OC1PE );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC1E, UT_TIM_GP_REG->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->BDTR );    /* General purpose timer has no main output */
 }
 
 
@@ -1372,15 +1446,15 @@ void Ut_Tim_Init_InvalidPeriph_ReturnsErrorWithoutAccess( void )
  */
 void Ut_Tim_Init_RccError_ReturnsErrorWithoutRegisterAccess( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
-    Rcc_Get_PeriphState_ExpectAndReturn( RCC_PERIPH_TIM3, NULL, RCC_REQUEST_ERROR );
+    Rcc_Get_PeriphState_ExpectAndReturn( UT_TIM_GP_RCC, NULL, RCC_REQUEST_ERROR );
     Rcc_Get_PeriphState_IgnoreArg_funcState();
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Init( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->PSC );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->PSC );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->ARR );
 }
 
 
@@ -1394,15 +1468,15 @@ void Ut_Tim_Init_RccError_ReturnsErrorWithoutRegisterAccess( void )
  */
 void Ut_Tim_Init_RunningTimer_ReturnsErrorWithoutReconfiguration( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
-    TIM3->CR1 = TIM_CR1_CEN;
-    TIM3->ARR = 0x1234u;
-    Ut_Tim_Expect_ClockActivation( RCC_PERIPH_TIM3 );
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
+    UT_TIM_GP_REG->ARR = 0x1234u;
+    Ut_Tim_Expect_ClockActivation( UT_TIM_GP_RCC );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Init( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0x1234u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0x1234u, UT_TIM_GP_REG->ARR );
 }
 
 
@@ -1416,20 +1490,20 @@ void Ut_Tim_Init_RunningTimer_ReturnsErrorWithoutReconfiguration( void )
  */
 void Ut_Tim_Init_ChannelPinError_ReturnsErrorWithoutChannelConfiguration( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     config.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState = TIM_FUNCTION_ACTIVE;
     config.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode  = TIM_CHANNEL_MODE_OUTPUT_PWM;
-    config.ChannelConfig[ TIM_CHANNEL_1 ].IoPin        = TIM_3_CH1_PA6;
+    config.ChannelConfig[ TIM_CHANNEL_1 ].IoPin        = UT_TIM_GP_CH1_PIN;
 
-    Ut_Tim_Expect_ClockActivation( RCC_PERIPH_TIM3 );
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
-    Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_6, GPIO_ALT_FUNC_2, GPIO_REQUEST_ERROR );
+    Ut_Tim_Expect_ClockActivation( UT_TIM_GP_RCC );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_GpioInit( UT_TIM_GP_CH1_PORT, UT_TIM_GP_CH1_PIN_ID, GPIO_ALT_FUNC_2, GPIO_REQUEST_ERROR );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Init( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
 }
 
 
@@ -1443,16 +1517,16 @@ void Ut_Tim_Init_ChannelPinError_ReturnsErrorWithoutChannelConfiguration( void )
  */
 void Ut_Tim_InitBase_RefreshFrequencyAboveTimerFrequency_ReturnsError( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     config.TimerFrequency   = 1000u;
     config.RefreshFrequency = 2000u;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->ARR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->EGR );     /* No update event on error */
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->EGR );     /* No update event on error */
 }
 
 
@@ -1467,47 +1541,47 @@ void Ut_Tim_InitBase_RefreshFrequencyAboveTimerFrequency_ReturnsError( void )
  */
 void Ut_Tim_InitBase_ExternalEtrClock_FreeRunningCounter( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_16B_PERIPH );
 
-    TIM3->PSC          = 0x55u;
+    UT_TIM_16B_REG->PSC          = 0x55u;
     config.ClockSource = TIM_CLOCKSOURCE_EXTERNAL_ETR;
 
     /* No RCC clock request - counter counts ETR edges */
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBase( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_SMCR_ECE, TIM3->SMCR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->PSC );
-    TEST_ASSERT_EQUAL_HEX32( UT_TIM_16BIT_MAX, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( TIM_SMCR_ECE, UT_TIM_16B_REG->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->PSC );
+    TEST_ASSERT_EQUAL_HEX32( UT_TIM_16BIT_MAX, UT_TIM_16B_REG->ARR );
 }
 
 
 /**
  * \brief   Tim_InitBase() configures slave mode, master trigger and counter options.
  *
- * \details TIM3 in reset slave mode with trigger ITR1, master trigger update,
+ * \details TIM3 in reset slave mode with trigger TI2FP2, master trigger update,
  *          down-counting and auto-reload preload.
  *
  * \par Expected results
- * - SMCR.TS = ITR1, SMCR.SMS = reset mode, CR2.MMS = update.
+ * - SMCR.TS = TI2FP2, SMCR.SMS = reset mode, CR2.MMS = update.
  * - CR1 = DIR | ARPE.
  */
 void Ut_Tim_InitBase_SlaveModeAndMasterTrigger_ConfiguresSynchronization( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     config.SlaveMode         = TIM_SLAVE_MODE_RESET;
-    config.SlaveTriggerInput = TIM_EXT_CLK_SOURCE_ITR1;
+    config.SlaveTriggerInput = UT_TIM_GP_TRG_TI2FP2;
     config.MasterTrigger     = TIM_MASTER_TRIGGER_UPDATE;
     config.CounterDirection  = TIM_COUNTER_DIR_DOWN;
     config.AutoreloadPreloadState = TIM_FUNCTION_ACTIVE;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBase( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR1,         TIM3->SMCR & TIM_SMCR_TS );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_SLAVEMODE_RESET, TIM3->SMCR & TIM_SMCR_SMS );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TRGO_UPDATE,     TIM3->CR2 & TIM_CR2_MMS );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_DIR | TIM_CR1_ARPE, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2,         UT_TIM_GP_REG->SMCR & TIM_SMCR_TS );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_SLAVEMODE_RESET, UT_TIM_GP_REG->SMCR & TIM_SMCR_SMS );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TRGO_UPDATE,     UT_TIM_GP_REG->CR2 & TIM_CR2_MMS );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_DIR | TIM_CR1_ARPE, UT_TIM_GP_REG->CR1 );
 }
 
 
@@ -1522,17 +1596,17 @@ void Ut_Tim_InitBase_SlaveModeAndMasterTrigger_ConfiguresSynchronization( void )
  */
 void Ut_Tim_InitBase_SlaveModeWithExternalInputClock_ReturnsError( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     /* Slave mode and external clock mode 1 share SMS field */
     config.ClockSource       = TIM_CLOCKSOURCE_EXTERNAL_CH_IN;
-    config.ExtClockSource    = TIM_EXT_CLK_SOURCE_TI1FP1;
+    config.ExtClockSource    = UT_TIM_GP_TRG_TI1FP1;
     config.SlaveMode         = TIM_SLAVE_MODE_GATED;
-    config.SlaveTriggerInput = TIM_EXT_CLK_SOURCE_ITR1;
+    config.SlaveTriggerInput = UT_TIM_GP_TRG_TI2FP2;
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->ARR );
 }
 
 
@@ -1547,46 +1621,46 @@ void Ut_Tim_InitBase_SlaveModeWithExternalInputClock_ReturnsError( void )
  */
 void Ut_Tim_InitBase_InvalidConfig_ReturnsErrorWithoutWrite( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     config.CounterDirection = TIM_COUNTER_DIR_CNT;
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
-    config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
     config.UpdateEventState = (tim_FunctionState_t)( TIM_FUNCTION_ACTIVE + 1u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
-    config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
     config.AutoreloadPreloadState = (tim_FunctionState_t)( TIM_FUNCTION_ACTIVE + 1u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( NULL ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 }
 
 
 /**
  * \brief   Tim_InitBase() configures break and ETR pins.
  *
- * \details TIM1 with break input pin PA6 (polarity high) and ETR pin PA12. BDTR
- *          preset 0 (break active low).
+ * \details TIM1 with break input pin PB12 (polarity high) and ETR pin PA12 (both pins exist
+ *          on every device line). BDTR preset 0 (break active low).
  *
  * \par Expected results
- * - Gpio_Init() called for PA6 and PA12 with alternate function 1.
+ * - Gpio_Init() called for PB12 and PA12 with alternate function 1.
  * - TIM_REQUEST_OK, BDTR.BKP = polarity high (STM32F4 single break polarity).
  */
 void Ut_Tim_InitBase_BreakAndEtrPins_ConfiguresGpioAndBreakPolarity( void )
 {
     tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_1 );
 
-    config.BreakInPin         = TIM_1_BKIN_PA6;
+    config.BreakInPin         = TIM_1_BKIN_PB12;
     config.BreakInPinPolarity = TIM_POLARITY_HIGH;
     config.TriggerEventPin    = TIM_1_ETR_PA12;
 
     Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM1, UT_TIM_CLK_HZ );
-    Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_6,  GPIO_ALT_FUNC_1, GPIO_REQUEST_OK );
+    Ut_Tim_Expect_GpioInit( GPIO_PORT_B, GPIO_PIN_ID_12, GPIO_ALT_FUNC_1, GPIO_REQUEST_OK );
     Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_12, GPIO_ALT_FUNC_1, GPIO_REQUEST_OK );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBase( &config ) );
@@ -1606,14 +1680,14 @@ void Ut_Tim_InitBase_BreakAndEtrPins_ConfiguresGpioAndBreakPolarity( void )
  */
 void Ut_Tim_InitBase_ArrPreloadState_EnablesArpe( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     config.ArrPreloadState = TIM_FUNCTION_ACTIVE;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBase( &config ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_ARPE, TIM3->CR1 & TIM_CR1_ARPE );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR1_ARPE, UT_TIM_GP_REG->CR1 & TIM_CR1_ARPE );
 }
 
 
@@ -1635,12 +1709,12 @@ void Ut_Tim_InitBase_Break2PinOrInvalidArrPreload_ReturnsErrorWithoutWrite( void
     config.BreakIn2Pin = (tim_Bkin2Pin_t)0u;
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
-    config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
     config.ArrPreloadState = (tim_FunctionState_t)( TIM_FUNCTION_ACTIVE + 1u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitBase( &config ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM1->SMCR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
 }
 
 
@@ -1654,11 +1728,11 @@ void Ut_Tim_InitBase_Break2PinOrInvalidArrPreload_ReturnsErrorWithoutWrite( void
  */
 void Ut_Tim_InitBase_PinOfOtherTimer_IsIgnored( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
     /* ETR pin of TIM1 in configuration of TIM3 - no GPIO configuration expected */
     config.TriggerEventPin = TIM_1_ETR_PA12;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitBase( &config ) );
 }
@@ -1722,17 +1796,17 @@ void Ut_Tim_Deinit_AdvancedTimer_DeactivatesAllIrqLinesAndResetsPeripheral( void
  */
 void Ut_Tim_Deinit_RemovesUserCallbacks( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( TIM_PERIPH_3, Ut_Tim_UpdateCallback ) );
-    Ut_Tim_Enable_Irq( TIM_PERIPH_3, TIM_IRQ_UPDATE, NVIC_PERIPH_IRQ_TIM3 );
-    Ut_Tim_Expect_Deinit( RCC_PERIPH_TIM3, utTim_Tim3IrqLines );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( UT_TIM_GP_PERIPH, Ut_Tim_UpdateCallback ) );
+    Ut_Tim_Enable_Irq( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE, UT_TIM_GP_IRQ );
+    Ut_Tim_Expect_Deinit( UT_TIM_GP_RCC, utTim_Tim3IrqLines );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Deinit( &config ) );
 
     /* Interrupt still enabled in emulated registers (RCC reset is mocked) */
-    TIM3->SR = TIM_SR_UIF;
-    utTim_Isr[ NVIC_PERIPH_IRQ_TIM3 ]();
+    UT_TIM_GP_REG->SR = TIM_SR_UIF;
+    utTim_Isr[ UT_TIM_GP_IRQ ]();
 
     TEST_ASSERT_EQUAL_UINT32( 0u, utTim_UpdateCnt );
 }
@@ -1749,15 +1823,15 @@ void Ut_Tim_Deinit_RemovesUserCallbacks( void )
  */
 void Ut_Tim_Deinit_NvicError_ExecutesAllStepsAndReturnsError( void )
 {
-    tim_PeriphConfig_t config = Ut_Tim_Get_Config( TIM_PERIPH_3 );
+    tim_PeriphConfig_t config = Ut_Tim_Get_Config( UT_TIM_GP_PERIPH );
 
-    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM3, NVIC_REQUEST_ERROR );
-    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM3, NVIC_REQUEST_OK );
-    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM3, NVIC_REQUEST_OK );
-    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM3, NVIC_REQUEST_OK );
-    Rcc_Set_ResetActive_ExpectAndReturn( RCC_PERIPH_TIM3, RCC_REQUEST_OK );
-    Rcc_Set_ResetInactive_ExpectAndReturn( RCC_PERIPH_TIM3, RCC_REQUEST_OK );
-    Rcc_Set_PeriphInactive_ExpectAndReturn( RCC_PERIPH_TIM3, RCC_REQUEST_OK );
+    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( UT_TIM_GP_IRQ, NVIC_REQUEST_ERROR );
+    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( UT_TIM_GP_IRQ, NVIC_REQUEST_OK );
+    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( UT_TIM_GP_IRQ, NVIC_REQUEST_OK );
+    Nvic_Set_PeriphIrq_Inactive_ExpectAndReturn( UT_TIM_GP_IRQ, NVIC_REQUEST_OK );
+    Rcc_Set_ResetActive_ExpectAndReturn( UT_TIM_GP_RCC, RCC_REQUEST_OK );
+    Rcc_Set_ResetInactive_ExpectAndReturn( UT_TIM_GP_RCC, RCC_REQUEST_OK );
+    Rcc_Set_PeriphInactive_ExpectAndReturn( UT_TIM_GP_RCC, RCC_REQUEST_OK );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Deinit( &config ) );
 }
@@ -1792,13 +1866,13 @@ void Ut_Tim_Deinit_InvalidArgs_ReturnsErrorWithoutAccess( void )
  */
 void Ut_Tim_Set_IrqActive_GlobalLine_RegistersIsrAndEnablesInterrupt( void )
 {
-    Nvic_Set_PeriphIrq_Active_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM3, NVIC_REQUEST_OK );
+    Nvic_Set_PeriphIrq_Active_ExpectAndReturn( UT_TIM_GP_IRQ, NVIC_REQUEST_OK );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( TIM_PERIPH_3, TIM_IRQ_UPDATE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE ) );
 
-    TEST_ASSERT_NOT_NULL( utTim_Isr[ NVIC_PERIPH_IRQ_TIM3 ] );
-    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_UIE, TIM3->DIER );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SR & TIM_SR_UIF );   /* Pending request discarded */
+    TEST_ASSERT_NOT_NULL( utTim_Isr[ UT_TIM_GP_IRQ ] );
+    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_UIE, UT_TIM_GP_REG->DIER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SR & TIM_SR_UIF );   /* Pending request discarded */
 }
 
 
@@ -1865,13 +1939,13 @@ void Ut_Tim_Set_IrqActive_NotAvailable_ReturnsErrorWithoutNvicAccess( void )
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( TIM_PERIPH_6, TIM_IRQ_CAPTURE_COMPARE_CH1 ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( TIM_PERIPH_3, TIM_IRQ_BREAK ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( TIM_PERIPH_3, TIM_IRQ_COMMUTATION ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( TIM_PERIPH_3, TIM_IRQ_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( UT_TIM_GP_PERIPH, TIM_IRQ_BREAK ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( UT_TIM_GP_PERIPH, TIM_IRQ_COMMUTATION ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( UT_TIM_GP_PERIPH, TIM_IRQ_CNT ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( TIM_PERIPH_CNT, TIM_IRQ_UPDATE ) );
 
     TEST_ASSERT_EQUAL_UINT32( 0u, utTim_HandlerCallCnt );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->DIER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->DIER );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->DIER );
 #endif /* TIM6 */
@@ -1888,11 +1962,11 @@ void Ut_Tim_Set_IrqActive_NotAvailable_ReturnsErrorWithoutNvicAccess( void )
  */
 void Ut_Tim_Set_IrqActive_NvicError_ReturnsErrorWithoutEnable( void )
 {
-    Nvic_Set_PeriphIrq_Active_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM3, NVIC_REQUEST_ERROR );
+    Nvic_Set_PeriphIrq_Active_ExpectAndReturn( UT_TIM_GP_IRQ, NVIC_REQUEST_ERROR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( TIM_PERIPH_3, TIM_IRQ_UPDATE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqActive( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->DIER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->DIER );
 }
 
 
@@ -1910,16 +1984,16 @@ void Ut_Tim_Set_IrqInactive_DisablesInterrupt( void )
 {
     tim_FunctionState_t irqState = TIM_FUNCTION_INACTIVE;
 
-    TIM3->DIER = TIM_DIER_UIE | TIM_DIER_CC2IE;
+    UT_TIM_GP_REG->DIER = TIM_DIER_UIE | TIM_DIER_CC2IE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_IrqState( TIM_PERIPH_3, TIM_IRQ_CAPTURE_COMPARE_CH2, &irqState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_IrqState( UT_TIM_GP_PERIPH, TIM_IRQ_CAPTURE_COMPARE_CH2, &irqState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, irqState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqInactive( TIM_PERIPH_3, TIM_IRQ_CAPTURE_COMPARE_CH2 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqInactive( UT_TIM_GP_PERIPH, TIM_IRQ_CAPTURE_COMPARE_CH2 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_UIE, TIM3->DIER );
+    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_UIE, UT_TIM_GP_REG->DIER );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_IrqState( TIM_PERIPH_3, TIM_IRQ_CAPTURE_COMPARE_CH2, &irqState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_IrqState( UT_TIM_GP_PERIPH, TIM_IRQ_CAPTURE_COMPARE_CH2, &irqState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_INACTIVE, irqState );
 }
 
@@ -1937,11 +2011,11 @@ void Ut_Tim_Get_IrqState_InvalidArgs_ReturnsError( void )
 {
     tim_FunctionState_t irqState = TIM_FUNCTION_INACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_IrqState( TIM_PERIPH_3, TIM_IRQ_UPDATE, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_IrqState( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE, NULL ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_IrqState( TIM_PERIPH_6, TIM_IRQ_TRIGGER, &irqState ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqInactive( TIM_PERIPH_3, TIM_IRQ_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqInactive( UT_TIM_GP_PERIPH, TIM_IRQ_CNT ) );
 }
 
 
@@ -1976,9 +2050,9 @@ void Ut_Tim_Set_IrqPriority_AdvancedTimer_SetsAllLines( void )
  */
 void Ut_Tim_Set_IrqPriority_NvicError_StopsAndReturnsError( void )
 {
-    Nvic_Set_PeriphIrq_Prio_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM3, UT_TIM_PRIO, NVIC_REQUEST_ERROR );
+    Nvic_Set_PeriphIrq_Prio_ExpectAndReturn( UT_TIM_GP_IRQ, UT_TIM_PRIO, NVIC_REQUEST_ERROR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqPriority( TIM_PERIPH_3, UT_TIM_PRIO ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqPriority( UT_TIM_GP_PERIPH, UT_TIM_PRIO ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_IrqPriority( TIM_PERIPH_CNT, UT_TIM_PRIO ) );
 }
 
@@ -1998,7 +2072,7 @@ void Ut_Tim_Get_IrqPriority_ReadsUpdateLinePriority( void )
     static nvic_IrqPrio_t nvicPrio = UT_TIM_PRIO;
     tim_IrqPrio_t         irqPrio  = 0u;
 
-    Nvic_Get_PeriphIrq_Prio_ExpectAndReturn( NVIC_PERIPH_IRQ_TIM1_UP_TIM10, NULL, NVIC_REQUEST_OK );
+    Nvic_Get_PeriphIrq_Prio_ExpectAndReturn( UT_TIM_TIM1_UP_IRQ, NULL, NVIC_REQUEST_OK );
     Nvic_Get_PeriphIrq_Prio_IgnoreArg_irqPrio();
     Nvic_Get_PeriphIrq_Prio_ReturnThruPtr_irqPrio( &nvicPrio );
 
@@ -2023,15 +2097,15 @@ void Ut_Tim_Get_Flag_ReadsStatusFlag( void )
 {
     tim_FlagState_t flagState = TIM_FLAG_INACTIVE;
 
-    TIM3->SR = TIM_SR_UIF;
+    UT_TIM_GP_REG->SR = TIM_SR_UIF;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Flag( TIM_PERIPH_3, TIM_IRQ_UPDATE, &flagState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Flag( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE, &flagState ) );
     TEST_ASSERT_EQUAL( TIM_FLAG_ACTIVE, flagState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Flag( TIM_PERIPH_3, TIM_IRQ_CAPTURE_COMPARE_CH1, &flagState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Flag( UT_TIM_GP_PERIPH, TIM_IRQ_CAPTURE_COMPARE_CH1, &flagState ) );
     TEST_ASSERT_EQUAL( TIM_FLAG_INACTIVE, flagState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_Flag( TIM_PERIPH_3, TIM_IRQ_UPDATE, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_Flag( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE, NULL ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_Flag( TIM_PERIPH_6, TIM_IRQ_CAPTURE_COMPARE_CH1, &flagState ) );
 #endif /* TIM6 */
@@ -2049,14 +2123,14 @@ void Ut_Tim_Get_Flag_ReadsStatusFlag( void )
  */
 void Ut_Tim_Clear_Flag_WritesZeroToFlag( void )
 {
-    TIM3->SR = TIM_SR_UIF | TIM_SR_CC1IF;
+    UT_TIM_GP_REG->SR = TIM_SR_UIF | TIM_SR_CC1IF;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Clear_Flag( TIM_PERIPH_3, TIM_IRQ_CAPTURE_COMPARE_CH1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Clear_Flag( UT_TIM_GP_PERIPH, TIM_IRQ_CAPTURE_COMPARE_CH1 ) );
 
     /* rc_w0: only the flag bit is written with 0 */
-    TEST_ASSERT_EQUAL_HEX32( ~TIM_SR_CC1IF, TIM3->SR );
+    TEST_ASSERT_EQUAL_HEX32( ~TIM_SR_CC1IF, UT_TIM_GP_REG->SR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Clear_Flag( TIM_PERIPH_3, TIM_IRQ_BREAK ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Clear_Flag( UT_TIM_GP_PERIPH, TIM_IRQ_BREAK ) );
 }
 
 /* =========================== INTERRUPT HANDLING =========================== */
@@ -2071,14 +2145,14 @@ void Ut_Tim_Clear_Flag_WritesZeroToFlag( void )
  */
 void Ut_Tim_Isr_Update_CallsCallbackAndClearsFlag( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( TIM_PERIPH_3, Ut_Tim_UpdateCallback ) );
-    Ut_Tim_Enable_Irq( TIM_PERIPH_3, TIM_IRQ_UPDATE, NVIC_PERIPH_IRQ_TIM3 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( UT_TIM_GP_PERIPH, Ut_Tim_UpdateCallback ) );
+    Ut_Tim_Enable_Irq( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE, UT_TIM_GP_IRQ );
 
-    TIM3->SR = TIM_SR_UIF;
-    utTim_Isr[ NVIC_PERIPH_IRQ_TIM3 ]();
+    UT_TIM_GP_REG->SR = TIM_SR_UIF;
+    utTim_Isr[ UT_TIM_GP_IRQ ]();
 
     TEST_ASSERT_EQUAL_UINT32( 1u, utTim_UpdateCnt );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SR & TIM_SR_UIF );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SR & TIM_SR_UIF );
 }
 
 
@@ -2094,18 +2168,18 @@ void Ut_Tim_Isr_Update_CallsCallbackAndClearsFlag( void )
  */
 void Ut_Tim_Isr_CaptureCompare_ReportsOvercapture( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( TIM_PERIPH_3, TIM_CHANNEL_2, Ut_Tim_CaptureCompareCallback ) );
-    Ut_Tim_Enable_Irq( TIM_PERIPH_3, TIM_IRQ_CAPTURE_COMPARE_CH2, NVIC_PERIPH_IRQ_TIM3 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, Ut_Tim_CaptureCompareCallback ) );
+    Ut_Tim_Enable_Irq( UT_TIM_GP_PERIPH, TIM_IRQ_CAPTURE_COMPARE_CH2, UT_TIM_GP_IRQ );
 
-    TIM3->SR = TIM_SR_CC2IF | TIM_SR_CC2OF;
-    utTim_Isr[ NVIC_PERIPH_IRQ_TIM3 ]();
+    UT_TIM_GP_REG->SR = TIM_SR_CC2IF | TIM_SR_CC2OF;
+    utTim_Isr[ UT_TIM_GP_IRQ ]();
 
     TEST_ASSERT_EQUAL_UINT32( 1u, utTim_CaptureCompareCnt );
     TEST_ASSERT_EQUAL( TIM_OVERCAPTURE_ACTIVE, utTim_LastOvercapture );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SR & TIM_SR_CC2IF );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SR & TIM_SR_CC2IF );
 
-    TIM3->SR = TIM_SR_CC2IF;
-    utTim_Isr[ NVIC_PERIPH_IRQ_TIM3 ]();
+    UT_TIM_GP_REG->SR = TIM_SR_CC2IF;
+    utTim_Isr[ UT_TIM_GP_IRQ ]();
 
     TEST_ASSERT_EQUAL_UINT32( 2u, utTim_CaptureCompareCnt );
     TEST_ASSERT_EQUAL( TIM_OVERCAPTURE_INACTIVE, utTim_LastOvercapture );
@@ -2234,11 +2308,11 @@ void Ut_Tim_Isr_DedicatedLine_ProcessesOnlyOwnGroup( void )
 {
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( TIM_PERIPH_1, Ut_Tim_UpdateCallback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( TIM_PERIPH_1, TIM_CHANNEL_1, Ut_Tim_CaptureCompareCallback ) );
-    Ut_Tim_Enable_Irq( TIM_PERIPH_1, TIM_IRQ_UPDATE,              NVIC_PERIPH_IRQ_TIM1_UP_TIM10 );
+    Ut_Tim_Enable_Irq( TIM_PERIPH_1, TIM_IRQ_UPDATE,              UT_TIM_TIM1_UP_IRQ );
     Ut_Tim_Enable_Irq( TIM_PERIPH_1, TIM_IRQ_CAPTURE_COMPARE_CH1, NVIC_PERIPH_IRQ_TIM1_CC );
 
     TIM1->SR = TIM_SR_UIF | TIM_SR_CC1IF;
-    utTim_Isr[ NVIC_PERIPH_IRQ_TIM1_UP_TIM10 ]();
+    utTim_Isr[ UT_TIM_TIM1_UP_IRQ ]();
 
     TEST_ASSERT_EQUAL_UINT32( 1u, utTim_UpdateCnt );
     TEST_ASSERT_EQUAL_UINT32( 0u, utTim_CaptureCompareCnt );
@@ -2256,13 +2330,13 @@ void Ut_Tim_Isr_DedicatedLine_ProcessesOnlyOwnGroup( void )
  */
 void Ut_Tim_Isr_DisabledInterrupt_IsNotHandled( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( TIM_PERIPH_3, Ut_Tim_UpdateCallback ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( TIM_PERIPH_3, TIM_CHANNEL_1, Ut_Tim_CaptureCompareCallback ) );
-    Ut_Tim_Enable_Irq( TIM_PERIPH_3, TIM_IRQ_UPDATE, NVIC_PERIPH_IRQ_TIM3 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( UT_TIM_GP_PERIPH, Ut_Tim_UpdateCallback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, Ut_Tim_CaptureCompareCallback ) );
+    Ut_Tim_Enable_Irq( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE, UT_TIM_GP_IRQ );
 
     /* CC1 flag pending, but CC1 interrupt is not enabled */
-    TIM3->SR = TIM_SR_UIF | TIM_SR_CC1IF;
-    utTim_Isr[ NVIC_PERIPH_IRQ_TIM3 ]();
+    UT_TIM_GP_REG->SR = TIM_SR_UIF | TIM_SR_CC1IF;
+    utTim_Isr[ UT_TIM_GP_IRQ ]();
 
     TEST_ASSERT_EQUAL_UINT32( 1u, utTim_UpdateCnt );
     TEST_ASSERT_EQUAL_UINT32( 0u, utTim_CaptureCompareCnt );
@@ -2279,12 +2353,12 @@ void Ut_Tim_Isr_DisabledInterrupt_IsNotHandled( void )
  */
 void Ut_Tim_Isr_NoCallbackRegistered_ClearsFlag( void )
 {
-    Ut_Tim_Enable_Irq( TIM_PERIPH_3, TIM_IRQ_UPDATE, NVIC_PERIPH_IRQ_TIM3 );
+    Ut_Tim_Enable_Irq( UT_TIM_GP_PERIPH, TIM_IRQ_UPDATE, UT_TIM_GP_IRQ );
 
-    TIM3->SR = TIM_SR_UIF;
-    utTim_Isr[ NVIC_PERIPH_IRQ_TIM3 ]();
+    UT_TIM_GP_REG->SR = TIM_SR_UIF;
+    utTim_Isr[ UT_TIM_GP_IRQ ]();
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SR & TIM_SR_UIF );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SR & TIM_SR_UIF );
 }
 
 
@@ -2357,10 +2431,10 @@ void Ut_Tim_Set_MasterTrigger_NotAvailableOnStm32F4_ReturnsErrorWithoutWrite( vo
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_MasterTrigger2( TIM_PERIPH_1, TIM_MASTER_TRIGGER2_UPDATE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_MasterTrigger2( TIM_PERIPH_1, &masterTrigger2 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_MasterTrigger( TIM_PERIPH_3, TIM_MASTER_TRIGGER_ENCODER_CLK ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_MasterTrigger( UT_TIM_GP_PERIPH, TIM_MASTER_TRIGGER_ENCODER_CLK ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM1->CR2 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR2 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR2 );
 }
 
 
@@ -2378,14 +2452,14 @@ void Ut_Tim_Set_MasterSlaveMode_TogglesMsm( void )
 {
     tim_FunctionState_t modeState = TIM_FUNCTION_INACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_MasterSlaveModeActive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_SMCR_MSM, TIM3->SMCR );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_MasterSlaveModeActive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_SMCR_MSM, UT_TIM_GP_REG->SMCR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_MasterSlaveMode( TIM_PERIPH_3, &modeState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_MasterSlaveMode( UT_TIM_GP_PERIPH, &modeState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, modeState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_MasterSlaveModeInactive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_MasterSlaveModeInactive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 
     /* Basic timer has no slave mode controller */
 #if defined(TIM6)
@@ -2397,43 +2471,43 @@ void Ut_Tim_Set_MasterSlaveMode_TogglesMsm( void )
 /**
  * \brief   Gated slave mode with trigger input is written and read back.
  *
- * \details Sets TIM3 gated slave mode with trigger ITR1 and reads it back.
+ * \details Sets TIM3 gated slave mode with trigger TI2FP2 and reads it back.
  *
  * \par Expected results
- * - SMCR = TS ITR1 | SMS gated.
- * - Slave mode gated and trigger ITR1 read back.
+ * - SMCR = TS TI2FP2 | SMS gated.
+ * - Slave mode gated and trigger TI2FP2 read back.
  */
 void Ut_Tim_Set_SlaveMode_Gated_WritesTriggerAndMode( void )
 {
     tim_SlaveMode_t    slaveMode    = TIM_SLAVE_MODE_DISABLE;
-    tim_TriggerInput_t triggerInput = TIM_EXT_CLK_SOURCE_ITR0;
+    tim_TriggerInput_t triggerInput = TIM_TRIGGER_INPUT_UNUSED;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_GATED, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_GATED, UT_TIM_GP_TRG_TI2FP2 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR1 | LL_TIM_SLAVEMODE_GATED, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_GATED, UT_TIM_GP_REG->SMCR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_SlaveMode( TIM_PERIPH_3, &slaveMode, &triggerInput ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_SlaveMode( UT_TIM_GP_PERIPH, &slaveMode, &triggerInput ) );
     TEST_ASSERT_EQUAL( TIM_SLAVE_MODE_GATED, slaveMode );
-    TEST_ASSERT_EQUAL( TIM_EXT_CLK_SOURCE_ITR1, triggerInput );
+    TEST_ASSERT_EQUAL( UT_TIM_GP_TRG_TI2FP2, triggerInput );
 }
 
 
 /**
  * \brief   Disabled slave mode clears SMS without trigger validation.
  *
- * \details SMCR = ITR1 | gated, sets slave mode disabled with invalid trigger input.
+ * \details SMCR = TI2FP2 | gated, sets slave mode disabled with invalid trigger input.
  *
  * \par Expected results
  * - TIM_REQUEST_OK, SMCR.SMS = 0.
  */
 void Ut_Tim_Set_SlaveMode_Disable_ClearsSlaveMode( void )
 {
-    TIM3->SMCR = LL_TIM_TS_ITR1 | LL_TIM_SLAVEMODE_GATED;
+    UT_TIM_GP_REG->SMCR = LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_GATED;
 
     /* Trigger input is not used (not validated) when slave mode is disabled */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_DISABLE, UT_TIM_INVALID_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_DISABLE, UT_TIM_INVALID_TRIGGER ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR & TIM_SMCR_SMS );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR & TIM_SMCR_SMS );
 }
 
 
@@ -2450,18 +2524,20 @@ void Ut_Tim_Set_SlaveMode_Disable_ClearsSlaveMode( void )
 void Ut_Tim_Set_SlaveMode_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
     /* External clock mode is configured by Tim_Set_ClockSource */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_EXTERNAL_CLOCK, TIM_EXT_CLK_SOURCE_ITR1 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_CNT, TIM_EXT_CLK_SOURCE_ITR1 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_RESET, UT_TIM_INVALID_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_EXTERNAL_CLOCK, UT_TIM_GP_TRG_TI2FP2 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_CNT, UT_TIM_GP_TRG_TI2FP2 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_RESET, UT_TIM_INVALID_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_RESET, UT_TIM_FOREIGN_TRIGGER ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_RESET, TIM_TRIGGER_INPUT_UNUSED ) );
 #if defined(TIM6)
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_6, TIM_SLAVE_MODE_RESET, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_6, TIM_SLAVE_MODE_RESET, UT_TIM_GP_TRG_TI2FP2 ) );
 #endif /* TIM6 */
 
     /* Combined slave modes (SMS bit 3) are not available on STM32F4 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_RESET_TRIGGER, TIM_EXT_CLK_SOURCE_ITR1 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_GATED_RESET, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_RESET_TRIGGER, UT_TIM_GP_TRG_TI2FP2 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_GATED_RESET, UT_TIM_GP_TRG_TI2FP2 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->SMCR );
 #endif /* TIM6 */
@@ -2478,11 +2554,84 @@ void Ut_Tim_Set_SlaveMode_InvalidArgs_ReturnsErrorWithoutWrite( void )
  */
 void Ut_Tim_Set_SlaveMode_RunningTimer_ReturnsErrorWithoutWrite( void )
 {
-    TIM3->CR1 = TIM_CR1_CEN;
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( TIM_PERIPH_3, TIM_SLAVE_MODE_TRIGGER, TIM_EXT_CLK_SOURCE_ITR1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_SlaveMode( UT_TIM_GP_PERIPH, TIM_SLAVE_MODE_TRIGGER, UT_TIM_GP_TRG_TI2FP2 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
+}
+
+/**
+ * \brief   Internal trigger input of a timer is written and read back.
+ *
+ * \details SMCR.TS = TI1FP1, sets reset slave mode of TIM1 ITR0 (TIM5 TRGO, exists on every device) and reads it back.
+ *
+ * \par Expected results
+ * - SMCR = TS code of the input | SMS reset.
+ * - Slave mode reset and the trigger input item read back.
+ */
+void Ut_Tim_Set_SlaveMode_InternalTrigger_WritesTsOfTimer( void )
+{
+    tim_SlaveMode_t    slaveMode    = TIM_SLAVE_MODE_DISABLE;
+    tim_TriggerInput_t triggerInput = TIM_TRIGGER_INPUT_UNUSED;
+
+    TIM1->SMCR = LL_TIM_TS_TI1FP1;
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_1, TIM_SLAVE_MODE_RESET, TIM_TRIGGER_INPUT_TIM1_ITR0_TIM5_TRGO ) );
+
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR0 | LL_TIM_SLAVEMODE_RESET, TIM1->SMCR );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_SlaveMode( TIM_PERIPH_1, &slaveMode, &triggerInput ) );
+    TEST_ASSERT_EQUAL( TIM_SLAVE_MODE_RESET, slaveMode );
+    TEST_ASSERT_EQUAL( TIM_TRIGGER_INPUT_TIM1_ITR0_TIM5_TRGO, triggerInput );
+}
+
+
+/**
+ * \brief   Internal trigger inputs of other timers are written.
+ *
+ * \details Sets the trigger inputs of TIM1 from TIM2 TRGO (ITR1, gated) and from TIM4 TRGO (ITR3, trigger mode) on the devices with the timers, otherwise the test is
+ *          ignored.
+ *
+ * \par Expected results
+ * - SMCR = TS code of the input | SMS of the mode.
+ */
+void Ut_Tim_Set_SlaveMode_InternalTriggerOfOtherTimers_WritesTs( void )
+{
+#if defined(TIM2) && \
+    defined(TIM3) && \
+    defined(TIM4)
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_1, TIM_SLAVE_MODE_DISABLE, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_1, TIM_SLAVE_MODE_GATED, TIM_TRIGGER_INPUT_TIM1_ITR1_TIM2_TRGO ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR1 | LL_TIM_SLAVEMODE_GATED, TIM1->SMCR );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_1, TIM_SLAVE_MODE_DISABLE, TIM_TRIGGER_INPUT_UNUSED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_SlaveMode( TIM_PERIPH_1, TIM_SLAVE_MODE_TRIGGER, TIM_TRIGGER_INPUT_TIM1_ITR3_TIM4_TRGO ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_ITR3 | LL_TIM_SLAVEMODE_TRIGGER, TIM1->SMCR );
+#else
+    TEST_IGNORE_MESSAGE( "The device lacks the timers of the connections" );
+#endif
+}
+
+
+/**
+ * \brief   Trigger input of the slave mode is not reported while the slave mode is disabled.
+ *
+ * \details SMCR.TS = TI2FP2 with slave mode disabled, reads the slave mode.
+ *
+ * \par Expected results
+ * - Slave mode disabled, trigger input TIM_TRIGGER_INPUT_UNUSED.
+ */
+void Ut_Tim_Get_SlaveMode_Disabled_ReportsUnusedTrigger( void )
+{
+    tim_SlaveMode_t    slaveMode    = TIM_SLAVE_MODE_GATED;
+    tim_TriggerInput_t triggerInput = UT_TIM_GP_TRG_TI2FP2;
+
+    UT_TIM_GP_REG->SMCR = LL_TIM_TS_TI2FP2;
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_SlaveMode( UT_TIM_GP_PERIPH, &slaveMode, &triggerInput ) );
+    TEST_ASSERT_EQUAL( TIM_SLAVE_MODE_DISABLE, slaveMode );
+    TEST_ASSERT_EQUAL( TIM_TRIGGER_INPUT_UNUSED, triggerInput );
 }
 
 /* ============================= CHANNEL MODE =============================== */
@@ -2499,11 +2648,11 @@ void Ut_Tim_Set_ChannelMode_Toggle_WritesOutputCompareMode( void )
 {
     tim_ChannelMode_t channelMode = TIM_CHANNEL_MODE_CNT;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_2, TIM_CHANNEL_MODE_OUTPUT_COMPARE_TOGGLE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, TIM_CHANNEL_MODE_OUTPUT_COMPARE_TOGGLE ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_TOGGLE, LL_TIM_OC_GetMode( TIM3, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_TOGGLE, LL_TIM_OC_GetMode( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_2, &channelMode ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, &channelMode ) );
     TEST_ASSERT_EQUAL( TIM_CHANNEL_MODE_OUTPUT_COMPARE_TOGGLE, channelMode );
 }
 
@@ -2540,16 +2689,16 @@ void Ut_Tim_Set_ChannelMode_ModesNotAvailableOnStm32F4_ReturnsError( void )
 {
     tim_ChannelMode_t channelMode = TIM_CHANNEL_MODE_CNT;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_COMPARE_PULSE ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_DIRECTION ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_COMBINED_PWM ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_COMBINED_PWM_INV ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_ASSYMETRIC_PWM ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_ASSYMETRIC_PWM_INV ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR2 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_COMPARE_PULSE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_DIRECTION ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_COMBINED_PWM ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_COMBINED_PWM_INV ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_ASSYMETRIC_PWM ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_ASSYMETRIC_PWM_INV ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR2 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_FROZEN ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_3, &channelMode ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_FROZEN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, &channelMode ) );
     TEST_ASSERT_EQUAL( TIM_CHANNEL_MODE_OUTPUT_FROZEN, channelMode );
 }
 
@@ -2566,14 +2715,14 @@ void Ut_Tim_Set_ChannelMode_ModesNotAvailableOnStm32F4_ReturnsError( void )
 void Ut_Tim_Set_ChannelMode_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
     /* Input capture is configured by Tim_Set_Mode_InputCapture */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_CHANNEL_MODE_INPUT_CAPTURE ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_CHANNEL_MODE_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_5, TIM_CHANNEL_MODE_OUTPUT_PWM ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_CHANNEL_MODE_INPUT_CAPTURE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_CHANNEL_MODE_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_5, TIM_CHANNEL_MODE_OUTPUT_PWM ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ChannelMode( TIM_PERIPH_6, TIM_CHANNEL_1, TIM_CHANNEL_MODE_OUTPUT_PWM ) );
 #endif /* TIM6 */
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
 }
 
 
@@ -2590,12 +2739,12 @@ void Ut_Tim_Get_ChannelMode_InputChannel_ReturnsInputCapture( void )
 {
     tim_ChannelMode_t channelMode = TIM_CHANNEL_MODE_CNT;
 
-    TIM3->CCMR1 = TIM_CCMR1_CC1S_0;     /* IC1 mapped on TI1 */
+    UT_TIM_GP_REG->CCMR1 = TIM_CCMR1_CC1S_0;     /* IC1 mapped on TI1 */
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_1, &channelMode ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, &channelMode ) );
     TEST_ASSERT_EQUAL( TIM_CHANNEL_MODE_INPUT_CAPTURE, channelMode );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_ChannelMode( TIM_PERIPH_3, TIM_CHANNEL_1, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_ChannelMode( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, NULL ) );
 }
 
 /* ======================= COMPARE VALUE, DUTY CYCLE ======================== */
@@ -2612,10 +2761,10 @@ void Ut_Tim_Set_CompareValue_WritesCcr( void )
 {
     tim_Counter_t compareValue = 0u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CompareValue( TIM_PERIPH_3, TIM_CHANNEL_4, UT_TIM_16BIT_MAX ) );
-    TEST_ASSERT_EQUAL_HEX32( UT_TIM_16BIT_MAX, TIM3->CCR4 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CompareValue( UT_TIM_GP_PERIPH, TIM_CHANNEL_4, UT_TIM_16BIT_MAX ) );
+    TEST_ASSERT_EQUAL_HEX32( UT_TIM_16BIT_MAX, UT_TIM_GP_REG->CCR4 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CompareValue( TIM_PERIPH_3, TIM_CHANNEL_4, &compareValue ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CompareValue( UT_TIM_GP_PERIPH, TIM_CHANNEL_4, &compareValue ) );
     TEST_ASSERT_EQUAL_HEX32( UT_TIM_16BIT_MAX, compareValue );
 }
 
@@ -2630,9 +2779,9 @@ void Ut_Tim_Set_CompareValue_WritesCcr( void )
  */
 void Ut_Tim_Set_CompareValue_32BitTimer_AcceptsFullRange( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CompareValue( TIM_PERIPH_2, TIM_CHANNEL_1, 0x89ABCDEFu ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CompareValue( UT_TIM_32B_PERIPH, TIM_CHANNEL_1, 0x89ABCDEFu ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0x89ABCDEFu, TIM2->CCR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0x89ABCDEFu, UT_TIM_32B_REG->CCR1 );
 }
 
 
@@ -2649,15 +2798,15 @@ void Ut_Tim_Set_CompareValue_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
     tim_Counter_t compareValue = 0u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CompareValue( TIM_PERIPH_3, TIM_CHANNEL_1, UT_TIM_16BIT_MAX + 1u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CompareValue( TIM_PERIPH_3, TIM_CHANNEL_5, 1u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CompareValue( TIM_PERIPH_3, TIM_CHANNEL_CNT, 1u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CompareValue( TIM_PERIPH_3, TIM_CHANNEL_1, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CompareValue( UT_TIM_16B_PERIPH, TIM_CHANNEL_1, UT_TIM_16BIT_MAX + 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CompareValue( UT_TIM_16B_PERIPH, TIM_CHANNEL_5, 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CompareValue( UT_TIM_16B_PERIPH, TIM_CHANNEL_CNT, 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CompareValue( UT_TIM_16B_PERIPH, TIM_CHANNEL_1, NULL ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CompareValue( TIM_PERIPH_6, TIM_CHANNEL_1, &compareValue ) );
 #endif /* TIM6 */
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->CCR1 );
 }
 
 
@@ -2671,16 +2820,16 @@ void Ut_Tim_Set_CompareValue_InvalidArgs_ReturnsErrorWithoutWrite( void )
  */
 void Ut_Tim_Set_PwmMode_DutyCycle_CalculatesCompareValue( void )
 {
-    TIM3->ARR = 999u;   /* Period of 1000 steps */
+    UT_TIM_GP_REG->ARR = 999u;   /* Period of 1000 steps */
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_DutyCycle( TIM_PERIPH_3, TIM_CHANNEL_1, 2500u ) );
-    TEST_ASSERT_EQUAL_HEX32( 250u, TIM3->CCR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_DutyCycle( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, 2500u ) );
+    TEST_ASSERT_EQUAL_HEX32( 250u, UT_TIM_GP_REG->CCR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_DutyCycle( TIM_PERIPH_3, TIM_CHANNEL_1, 10000u ) );
-    TEST_ASSERT_EQUAL_HEX32( 1000u, TIM3->CCR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_DutyCycle( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, 10000u ) );
+    TEST_ASSERT_EQUAL_HEX32( 1000u, UT_TIM_GP_REG->CCR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_DutyCycle( TIM_PERIPH_3, TIM_CHANNEL_1, 0u ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_DutyCycle( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, 0u ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCR1 );
 }
 
 
@@ -2694,12 +2843,12 @@ void Ut_Tim_Set_PwmMode_DutyCycle_CalculatesCompareValue( void )
  */
 void Ut_Tim_Set_PwmMode_DutyCycle_AboveMaximum_ReturnsErrorWithoutWrite( void )
 {
-    TIM3->ARR  = 999u;
-    TIM3->CCR1 = 1u;
+    UT_TIM_GP_REG->ARR  = 999u;
+    UT_TIM_GP_REG->CCR1 = 1u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_PwmMode_DutyCycle( TIM_PERIPH_3, TIM_CHANNEL_1, 10001u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_PwmMode_DutyCycle( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, 10001u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 1u, TIM3->CCR1 );
+    TEST_ASSERT_EQUAL_HEX32( 1u, UT_TIM_GP_REG->CCR1 );
 }
 
 
@@ -2716,16 +2865,16 @@ void Ut_Tim_Get_PwmMode_DutyCycle_RoundsToCentiPercent( void )
 {
     tim_CentiPercent_t dutyCycle = 0u;
 
-    TIM3->ARR  = 999u;
-    TIM3->CCR1 = 333u;
+    UT_TIM_GP_REG->ARR  = 999u;
+    UT_TIM_GP_REG->CCR1 = 333u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PwmMode_DutyCycle( TIM_PERIPH_3, TIM_CHANNEL_1, &dutyCycle ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PwmMode_DutyCycle( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, &dutyCycle ) );
     TEST_ASSERT_EQUAL_UINT16( 3330u, dutyCycle );
 
     /* Compare value above period - output permanently active */
-    TIM3->CCR1 = 2000u;
+    UT_TIM_GP_REG->CCR1 = 2000u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PwmMode_DutyCycle( TIM_PERIPH_3, TIM_CHANNEL_1, &dutyCycle ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PwmMode_DutyCycle( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, &dutyCycle ) );
     TEST_ASSERT_EQUAL_UINT16( 10000u, dutyCycle );
 }
 
@@ -2741,13 +2890,13 @@ void Ut_Tim_Get_PwmMode_DutyCycle_RoundsToCentiPercent( void )
  */
 void Ut_Tim_Set_PwmMode_PulseWidth_CalculatesCompareValue( void )
 {
-    TIM3->PSC = UT_TIM_PSC_1MHZ;    /* 1 us per step */
-    TIM3->ARR = 999u;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_GP_REG->PSC = UT_TIM_PSC_1MHZ;    /* 1 us per step */
+    UT_TIM_GP_REG->ARR = 999u;
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_PulseWidth( TIM_PERIPH_3, TIM_CHANNEL_2, 250000u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_PulseWidth( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, 250000u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 250u, TIM3->CCR2 );
+    TEST_ASSERT_EQUAL_HEX32( 250u, UT_TIM_GP_REG->CCR2 );
 }
 
 
@@ -2761,13 +2910,13 @@ void Ut_Tim_Set_PwmMode_PulseWidth_CalculatesCompareValue( void )
  */
 void Ut_Tim_Set_PwmMode_PulseWidth_LongerThanPeriod_ReturnsErrorWithoutWrite( void )
 {
-    TIM3->PSC = UT_TIM_PSC_1MHZ;
-    TIM3->ARR = 999u;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_GP_REG->PSC = UT_TIM_PSC_1MHZ;
+    UT_TIM_GP_REG->ARR = 999u;
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_PwmMode_PulseWidth( TIM_PERIPH_3, TIM_CHANNEL_2, 2000000u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_PwmMode_PulseWidth( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, 2000000u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCR2 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCR2 );
 }
 
 
@@ -2781,9 +2930,9 @@ void Ut_Tim_Set_PwmMode_PulseWidth_LongerThanPeriod_ReturnsErrorWithoutWrite( vo
  */
 void Ut_Tim_Set_PwmMode_PulseWidth_ExternalClock_ReturnsErrorWithoutRccAccess( void )
 {
-    TIM3->SMCR = TIM_SMCR_ECE;
+    UT_TIM_GP_REG->SMCR = TIM_SMCR_ECE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_PwmMode_PulseWidth( TIM_PERIPH_3, TIM_CHANNEL_2, 1000u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_PwmMode_PulseWidth( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, 1000u ) );
 }
 
 /* ====================== OUTPUT CONFIGURATION ============================== */
@@ -2800,11 +2949,11 @@ void Ut_Tim_Set_PwmMode_PulseWidth_ExternalClock_ReturnsErrorWithoutRccAccess( v
  */
 void Ut_Tim_Set_ComparePreload_TogglesOcpe( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ComparePreloadActive( TIM_PERIPH_3, TIM_CHANNEL_1 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCMR1_OC1PE, TIM3->CCMR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ComparePreloadActive( UT_TIM_GP_PERIPH, TIM_CHANNEL_1 ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCMR1_OC1PE, UT_TIM_GP_REG->CCMR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ComparePreloadInactive( TIM_PERIPH_3, TIM_CHANNEL_1 ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ComparePreloadInactive( UT_TIM_GP_PERIPH, TIM_CHANNEL_1 ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
 
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ComparePreloadActive( TIM_PERIPH_6, TIM_CHANNEL_1 ) );
@@ -2848,12 +2997,12 @@ void Ut_Tim_Set_OutputPolarity_ComplementaryOutput_WritesCcnp( void )
 void Ut_Tim_Set_OutputPolarity_OutputNotAvailable_ReturnsErrorWithoutWrite( void )
 {
     /* General purpose timer has no complementary outputs and no channel 5 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( TIM_PERIPH_3, TIM_OUTPUT_1_N, TIM_POLARITY_LOW ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( TIM_PERIPH_3, TIM_OUTPUT_5,   TIM_POLARITY_LOW ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( TIM_PERIPH_3, TIM_OUTPUT_CNT, TIM_POLARITY_LOW ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( TIM_PERIPH_3, TIM_OUTPUT_1,   (tim_Polarity_t)( TIM_POLARITY_LOW + 1u ) ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( UT_TIM_GP_PERIPH, TIM_OUTPUT_1_N, TIM_POLARITY_LOW ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( UT_TIM_GP_PERIPH, TIM_OUTPUT_5,   TIM_POLARITY_LOW ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( UT_TIM_GP_PERIPH, TIM_OUTPUT_CNT, TIM_POLARITY_LOW ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputPolarity( UT_TIM_GP_PERIPH, TIM_OUTPUT_1,   (tim_Polarity_t)( TIM_POLARITY_LOW + 1u ) ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
 }
 
 
@@ -2871,17 +3020,17 @@ void Ut_Tim_Set_Output_TogglesChannelEnable( void )
 {
     tim_FunctionState_t outputState = TIM_FUNCTION_INACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OutputActive( TIM_PERIPH_3, TIM_OUTPUT_2 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC2E, TIM3->CCER );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OutputActive( UT_TIM_GP_PERIPH, TIM_OUTPUT_2 ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC2E, UT_TIM_GP_REG->CCER );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_OutputState( TIM_PERIPH_3, TIM_OUTPUT_2, &outputState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_OutputState( UT_TIM_GP_PERIPH, TIM_OUTPUT_2, &outputState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, outputState );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OutputInactive( TIM_PERIPH_3, TIM_OUTPUT_2 ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OutputInactive( UT_TIM_GP_PERIPH, TIM_OUTPUT_2 ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputActive( TIM_PERIPH_3, TIM_OUTPUT_2_N ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_OutputState( TIM_PERIPH_3, TIM_OUTPUT_2, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OutputActive( UT_TIM_GP_PERIPH, TIM_OUTPUT_2_N ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_OutputState( UT_TIM_GP_PERIPH, TIM_OUTPUT_2, NULL ) );
 }
 
 
@@ -2920,10 +3069,10 @@ void Ut_Tim_Set_MainOutput_GeneralTimer_ReturnsError( void )
 {
     tim_FunctionState_t outputState = TIM_FUNCTION_INACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_MainOutputActive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_MainOutputState( TIM_PERIPH_3, &outputState ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_MainOutputActive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_MainOutputState( UT_TIM_GP_PERIPH, &outputState ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->BDTR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->BDTR );
 }
 
 /* ======================= OUTPUT COMPARE / PWM MODES ======================= */
@@ -2932,8 +3081,9 @@ void Ut_Tim_Set_MainOutput_GeneralTimer_ReturnsError( void )
  * \brief   PWM mode of advanced timer enables output, complementary output and main
  *          output.
  *
- * \details TIM1 channel 1 PWM with complementary pin PA7, polarity low, idle state
- *          high, CCR1 preset 0x100.
+ * \details TIM1 channel 1 PWM with complementary pin PA7 (the code is built by the
+ *          encoding macro - the item of the pin table does not exist on STM32F410Tx),
+ *          polarity low, idle state high, CCR1 preset 0x100.
  *
  * \par Expected results
  * - OC1M = PWM mode 1 with preload.
@@ -2944,7 +3094,7 @@ void Ut_Tim_Set_Mode_Pwm_AdvancedTimerWithComplOutput_EnablesAllOutputs( void )
 {
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_1, TIM_CHANNEL_MODE_OUTPUT_PWM );
 
-    channelConfig.IoComplPin     = TIM_1_CH1N_PA7;
+    channelConfig.IoComplPin     = UT_TIM_1_CH1N_PA7;
     channelConfig.OutputPolarity = TIM_POLARITY_LOW;
     channelConfig.IdleState      = TIM_POLARITY_HIGH;
     TIM1->CCR1                   = 0x100u;
@@ -2992,12 +3142,12 @@ void Ut_Tim_Set_Mode_Pwm_NonPwmMode_ReturnsErrorWithoutWrite( void )
 {
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_1, TIM_CHANNEL_MODE_OUTPUT_COMPARE_TOGGLE );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Pwm( TIM_PERIPH_3, &channelConfig ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Pwm( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Pwm( UT_TIM_GP_PERIPH, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Pwm( UT_TIM_GP_PERIPH, NULL ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->EGR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->EGR );
 }
 
 
@@ -3013,13 +3163,13 @@ void Ut_Tim_Set_Mode_OutputCompare_Toggle_ConfiguresWithoutPreload( void )
 {
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_1, TIM_CHANNEL_MODE_OUTPUT_COMPARE_TOGGLE );
 
-    TIM3->CCMR1 = TIM_CCMR1_OC1PE;
+    UT_TIM_GP_REG->CCMR1 = TIM_CCMR1_OC1PE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_OutputCompare( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_OutputCompare( UT_TIM_GP_PERIPH, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_TOGGLE, LL_TIM_OC_GetMode( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 & TIM_CCMR1_OC1PE );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC1E, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_TOGGLE, LL_TIM_OC_GetMode( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 & TIM_CCMR1_OC1PE );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC1E, UT_TIM_GP_REG->CCER );
 }
 
 
@@ -3035,10 +3185,10 @@ void Ut_Tim_Set_Mode_OutputCompare_PulseModeNotAvailable_ReturnsError( void )
 {
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_3, TIM_CHANNEL_MODE_OUTPUT_COMPARE_PULSE );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_OutputCompare( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_OutputCompare( UT_TIM_GP_PERIPH, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR2 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR2 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
 }
 
 
@@ -3065,9 +3215,9 @@ void Ut_Tim_Set_Mode_Pwm_CombinedPwmNotAvailable_ReturnsError( void )
 /**
  * \brief   Channel 4 of advanced timer has no complementary output.
  *
- * \details TIM1 channel 4 PWM with complementary pin configured (TIM_1_CH1N_PA7, not
- *          used - channel 4 has no complementary output on STM32F4), then output 4N
- *          is activated.
+ * \details TIM1 channel 4 PWM with complementary pin configured (TIM1_CH1N PA7 built by
+ *          the encoding macro, not used - channel 4 has no complementary output on
+ *          STM32F4), then output 4N is activated.
  *
  * \par Expected results
  * - PWM: TIM_REQUEST_OK, CCER = CC4E only, BDTR = MOE.
@@ -3077,7 +3227,7 @@ void Ut_Tim_Set_Mode_Pwm_Channel4_HasNoComplementaryOutput( void )
 {
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_4, TIM_CHANNEL_MODE_OUTPUT_PWM );
 
-    channelConfig.IoComplPin = TIM_1_CH1N_PA7;
+    channelConfig.IoComplPin = UT_TIM_1_CH1N_PA7;
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_Pwm( TIM_PERIPH_1, &channelConfig ) );
 
@@ -3102,13 +3252,13 @@ void Ut_Tim_Set_Mode_ForcedOutput_WritesForcedMode( void )
 {
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_4, TIM_CHANNEL_MODE_OUTPUT_FORCED_ACTIVE );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_ForcedOutput( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_ForcedOutput( UT_TIM_GP_PERIPH, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_FORCED_ACTIVE, LL_TIM_OC_GetMode( TIM3, LL_TIM_CHANNEL_CH4 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC4E, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_FORCED_ACTIVE, LL_TIM_OC_GetMode( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH4 ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC4E, UT_TIM_GP_REG->CCER );
 
     channelConfig.ChannelMode = TIM_CHANNEL_MODE_OUTPUT_PWM;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_ForcedOutput( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_ForcedOutput( UT_TIM_GP_PERIPH, &channelConfig ) );
 }
 
 
@@ -3126,16 +3276,16 @@ void Ut_Tim_InitChannel_InvalidArgs_ReturnsErrorWithoutWrite( void )
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_5, TIM_CHANNEL_MODE_OUTPUT_PWM );
 
     /* General purpose timer has only 4 channels */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitChannel( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitChannel( UT_TIM_GP_PERIPH, &channelConfig ) );
 
     channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_1, TIM_CHANNEL_MODE_CNT );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitChannel( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitChannel( UT_TIM_GP_PERIPH, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitChannel( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitChannel( UT_TIM_GP_PERIPH, NULL ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitChannel( TIM_PERIPH_CNT, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
 }
 
 /* ============================= INPUT CAPTURE ============================== */
@@ -3160,13 +3310,13 @@ void Ut_Tim_Set_Mode_InputCapture_ConfiguresInputStage( void )
     channelConfig.InputFilter    = TIM_INPUT_FILTER_FDIV8_N6;
     channelConfig.InputPrescaler = TIM_INPUT_PRESCALER_DIV4;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_InputCapture( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_InputCapture( UT_TIM_GP_PERIPH, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_INDIRECTTI,  LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_BOTHEDGE,    LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV8_N6,      LL_TIM_IC_GetFilter( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ICPSC_DIV4,              LL_TIM_IC_GetPrescaler( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC2E, TIM3->CCER & TIM_CCER_CC2E );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_INDIRECTTI,  LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_BOTHEDGE,    LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV8_N6,      LL_TIM_IC_GetFilter( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ICPSC_DIV4,              LL_TIM_IC_GetPrescaler( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC2E, UT_TIM_GP_REG->CCER & TIM_CCER_CC2E );
 }
 
 
@@ -3184,22 +3334,22 @@ void Ut_Tim_Set_Mode_InputCapture_InvalidConfig_ReturnsErrorWithoutWrite( void )
     tim_ChannelConfig_t channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_1, TIM_CHANNEL_MODE_INPUT_CAPTURE );
 
     channelConfig.InputPolarity = UT_TIM_INVALID_IC_POLARITY;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputCapture( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputCapture( UT_TIM_GP_PERIPH, &channelConfig ) );
 
     channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_1, TIM_CHANNEL_MODE_INPUT_CAPTURE );
     channelConfig.InputFilter = TIM_INPUT_FILTER_CNT;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputCapture( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputCapture( UT_TIM_GP_PERIPH, &channelConfig ) );
 
     /* Output mode passed to input capture configuration */
     channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_1, TIM_CHANNEL_MODE_OUTPUT_PWM );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputCapture( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputCapture( UT_TIM_GP_PERIPH, &channelConfig ) );
 
     /* Channel 5 has no input stage */
     channelConfig = Ut_Tim_Get_ChannelConfig( TIM_CHANNEL_5, TIM_CHANNEL_MODE_INPUT_CAPTURE );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputCapture( TIM_PERIPH_1, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
 }
 
 
@@ -3217,10 +3367,10 @@ void Ut_Tim_InitChannel_InputCapture_ConfiguresInputStage( void )
 
     channelConfig.InputPolarity = TIM_INPUT_POLARITY_INVERTED;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitChannel( TIM_PERIPH_3, &channelConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitChannel( UT_TIM_GP_PERIPH, &channelConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC1E | TIM_CCER_CC1P, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CCER_CC1E | TIM_CCER_CC1P, UT_TIM_GP_REG->CCER );
 }
 
 
@@ -3238,13 +3388,13 @@ void Ut_Tim_Get_CaptureValue_ReadsCcr( void )
 {
     tim_Counter_t captureValue = 0u;
 
-    TIM3->CCR2 = 0x4321u;
+    UT_TIM_GP_REG->CCR2 = 0x4321u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CaptureValue( TIM_PERIPH_3, TIM_CHANNEL_2, &captureValue ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CaptureValue( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, &captureValue ) );
     TEST_ASSERT_EQUAL_HEX32( 0x4321u, captureValue );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CaptureValue( TIM_PERIPH_1, TIM_CHANNEL_5, &captureValue ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CaptureValue( TIM_PERIPH_3, TIM_CHANNEL_2, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CaptureValue( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, NULL ) );
 }
 
 
@@ -3258,13 +3408,13 @@ void Ut_Tim_Get_CaptureValue_ReadsCcr( void )
  */
 void Ut_Tim_Set_InputFilterPrescalerPolarity_WritesInputStage( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputFilter( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_INPUT_FILTER_FDIV32_N8 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputPrescaler( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_INPUT_PRESCALER_DIV8 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputPolarity( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_INPUT_POLARITY_INVERTED ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputFilter( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_INPUT_FILTER_FDIV32_N8 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputPrescaler( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_INPUT_PRESCALER_DIV8 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputPolarity( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_INPUT_POLARITY_INVERTED ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV32_N8,  LL_TIM_IC_GetFilter( TIM3, LL_TIM_CHANNEL_CH3 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ICPSC_DIV8,           LL_TIM_IC_GetPrescaler( TIM3, LL_TIM_CHANNEL_CH3 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,  LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH3 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV32_N8,  LL_TIM_IC_GetFilter( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH3 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ICPSC_DIV8,           LL_TIM_IC_GetPrescaler( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH3 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,  LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH3 ) );
 }
 
 
@@ -3279,15 +3429,15 @@ void Ut_Tim_Set_InputFilterPrescalerPolarity_WritesInputStage( void )
  */
 void Ut_Tim_Set_InputFilterPrescalerPolarity_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputFilter( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_FILTER_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputPrescaler( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_PRESCALER_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputPolarity( TIM_PERIPH_3, TIM_CHANNEL_1, UT_TIM_INVALID_IC_POLARITY ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputFilter( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_INPUT_FILTER_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputPrescaler( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_INPUT_PRESCALER_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputPolarity( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, UT_TIM_INVALID_IC_POLARITY ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputFilter( TIM_PERIPH_6, TIM_CHANNEL_1, TIM_INPUT_FILTER_INACTIVE ) );
 #endif /* TIM6 */
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCER );
 }
 
 
@@ -3303,14 +3453,14 @@ void Ut_Tim_Set_InputFilterPrescalerPolarity_InvalidArgs_ReturnsErrorWithoutWrit
  */
 void Ut_Tim_Set_Mode_InputPwm_Channel1_ConfiguresPairedChannelsAndResetMode( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_POLARITY_NORMAL, TIM_INPUT_FILTER_FDIV1_N2 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_INPUT_POLARITY_NORMAL, TIM_INPUT_FILTER_FDIV1_N2 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI,   LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_RISING,     LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_INDIRECTTI, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,    LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N2,     LL_TIM_IC_GetFilter( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1FP1 | LL_TIM_SLAVEMODE_RESET, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI,   LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_RISING,     LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_INDIRECTTI, LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,    LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N2,     LL_TIM_IC_GetFilter( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1FP1 | LL_TIM_SLAVEMODE_RESET, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -3325,12 +3475,12 @@ void Ut_Tim_Set_Mode_InputPwm_Channel1_ConfiguresPairedChannelsAndResetMode( voi
  */
 void Ut_Tim_Set_Mode_InputPwm_Channel2_UsesTi2AsTrigger( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_2, TIM_INPUT_POLARITY_INVERTED, TIM_INPUT_FILTER_INACTIVE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, TIM_INPUT_POLARITY_INVERTED, TIM_INPUT_FILTER_INACTIVE ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_INDIRECTTI, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_RISING,     LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,    LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_RESET, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_INDIRECTTI, LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_RISING,     LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,    LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_RESET, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -3345,18 +3495,18 @@ void Ut_Tim_Set_Mode_InputPwm_Channel2_UsesTi2AsTrigger( void )
  */
 void Ut_Tim_Set_Mode_InputPwm_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_3, TIM_INPUT_POLARITY_NORMAL,     TIM_INPUT_FILTER_INACTIVE ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_POLARITY_BOTH_EDGES, TIM_INPUT_FILTER_INACTIVE ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_POLARITY_NORMAL,     TIM_INPUT_FILTER_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_3, TIM_INPUT_POLARITY_NORMAL,     TIM_INPUT_FILTER_INACTIVE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_INPUT_POLARITY_BOTH_EDGES, TIM_INPUT_FILTER_INACTIVE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_INPUT_POLARITY_NORMAL,     TIM_INPUT_FILTER_CNT ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( TIM_PERIPH_6, TIM_CHANNEL_1, TIM_INPUT_POLARITY_NORMAL,     TIM_INPUT_FILTER_INACTIVE ) );
 #endif /* TIM6 */
 
-    TIM3->CR1 = TIM_CR1_CEN;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_POLARITY_NORMAL,     TIM_INPUT_FILTER_INACTIVE ) );
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, TIM_INPUT_POLARITY_NORMAL,     TIM_INPUT_FILTER_INACTIVE ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -3373,12 +3523,12 @@ void Ut_Tim_Get_InputPwm_CalculatesFrequencyAndDutyCycle( void )
     tim_FreqHz_t       frequency = 0u;
     tim_CentiPercent_t dutyCycle = 0u;
 
-    TIM3->PSC  = UT_TIM_PSC_1MHZ;
-    TIM3->CCR1 = 1000u;     /* Period: 1000 us */
-    TIM3->CCR2 = 250u;      /* Pulse:   250 us */
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_GP_REG->PSC  = UT_TIM_PSC_1MHZ;
+    UT_TIM_GP_REG->CCR1 = 1000u;     /* Period: 1000 us */
+    UT_TIM_GP_REG->CCR2 = 250u;      /* Pulse:   250 us */
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_1, &frequency, &dutyCycle ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, &frequency, &dutyCycle ) );
 
     TEST_ASSERT_EQUAL_UINT32( 1000u, frequency );
     TEST_ASSERT_EQUAL_UINT16( 2500u, dutyCycle );
@@ -3399,86 +3549,100 @@ void Ut_Tim_Get_InputPwm_NoPeriodCaptured_ReturnsError( void )
     tim_FreqHz_t       frequency = 0u;
     tim_CentiPercent_t dutyCycle = 0u;
 
-    TIM3->PSC = UT_TIM_PSC_1MHZ;
-    Ut_Tim_Expect_PeriphClk( RCC_PERIPH_TIM3, UT_TIM_CLK_HZ );
+    UT_TIM_GP_REG->PSC = UT_TIM_PSC_1MHZ;
+    Ut_Tim_Expect_PeriphClk( UT_TIM_GP_RCC, UT_TIM_CLK_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_1, &frequency, &dutyCycle ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_InputPwm( TIM_PERIPH_3, TIM_CHANNEL_1, NULL, &dutyCycle ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, &frequency, &dutyCycle ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_InputPwm( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, NULL, &dutyCycle ) );
 }
 
 
 /**
  * \brief   Input source of TIM5 channel 4 is written to TIM5_OR remap.
  *
- * \details Sets TIM5 channel 4 input source LSI (source 1) and reads it back, then
- *          sets GPIO input (pin).
+ * \details Sets TIM5 channel 4 input source LSI and reads it back, then sets GPIO input (pin).
  *
  * \par Expected results
- * - OR.TI4_RMP = LSI, source reads back 1.
- * - Pin: OR.TI4_RMP = 0, source reads back pin.
+ * - OR.TI4_RMP = LSI, the item TIM_INPUT_SOURCE_TIM5_CH4_LSI reads back.
+ * - Pin: OR.TI4_RMP = 0, the item TIM_INPUT_SOURCE_TIM5_CH4_PIN reads back.
  */
 void Ut_Tim_Set_InputSource_Tim5Channel4_WritesRemap( void )
 {
-    tim_InputSource_t inputSource = TIM_INPUT_SOURCE_PIN;
+    tim_InputSource_t inputSource = TIM_INPUT_SOURCE_TIM5_CH4_RTC_WKUP;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, TIM_INPUT_SOURCE_1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, TIM_INPUT_SOURCE_TIM5_CH4_LSI ) );
     TEST_ASSERT_EQUAL_HEX32( TIM_OR_TI4_RMP_0, TIM5->OR );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, &inputSource ) );
-    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_1, inputSource );
+    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_TIM5_CH4_LSI, inputSource );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, TIM_INPUT_SOURCE_PIN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, TIM_INPUT_SOURCE_TIM5_CH4_PIN ) );
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM5->OR );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, &inputSource ) );
-    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_PIN, inputSource );
+    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_TIM5_CH4_PIN, inputSource );
 }
 
 
 /**
- * \brief   Input source of TIM11 channel 1 selects HSE_RTC.
+ * \brief   Input source of TIM11 channel 1 selects HSE_RTC or SPDIFRX.
  *
- * \details Sets TIM11 channel 1 input source HSE_RTC (source 1), then source 3.
+ * \details Sets TIM11 channel 1 input source HSE_RTC and reads it back, then SPDIFRX frame synchronization
+ *          (devices with SPDIFRX) and a selection code that has no item.
  *
  * \par Expected results
- * - OR.TI1_RMP = HSE_RTC.
- * - Source 3: TIM_REQUEST_ERROR, OR unchanged.
+ * - HSE_RTC: OR.TI1_RMP = HSE_RTC, the item reads back.
+ * - SPDIFRX: OR.TI1_RMP = SPDIFRX on the devices with SPDIFRX, otherwise code 1 is refused.
+ * - Selection code 3: TIM_REQUEST_ERROR, OR unchanged.
  */
 void Ut_Tim_Set_InputSource_Tim11Channel1_SelectsHseRtc( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, TIM_INPUT_SOURCE_1 ) );
+    tim_InputSource_t inputSource = TIM_INPUT_SOURCE_TIM11_CH1_PIN;
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, TIM_INPUT_SOURCE_TIM11_CH1_HSE_RTC ) );
     TEST_ASSERT_EQUAL_HEX32( TIM_OR_TI1_RMP_1, TIM11->OR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, TIM_INPUT_SOURCE_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, &inputSource ) );
+    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_TIM11_CH1_HSE_RTC, inputSource );
+
+#if defined(SPDIFRX)
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, TIM_INPUT_SOURCE_TIM11_CH1_SPDIFRX_FRAME_SYNC ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_OR_TI1_RMP_0, TIM11->OR );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, TIM_INPUT_SOURCE_TIM11_CH1_HSE_RTC ) );
+#else
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, (tim_InputSource_t)TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_11, TIM_CHANNEL_1, 1u ) ) );
+#endif /* SPDIFRX */
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_11, TIM_CHANNEL_1, (tim_InputSource_t)TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_11, TIM_CHANNEL_1, 3u ) ) );
     TEST_ASSERT_EQUAL_HEX32( TIM_OR_TI1_RMP_1, TIM11->OR );
 }
 
 
 /**
- * \brief   Channels without input remap accept GPIO input only.
+ * \brief   Channels without input remap and items of other timers / channels are refused.
  *
- * \details Sets TIM3 channel 1 input source pin and source 1, reads source of TIM3
- *          channel 1, sets source out of range on TIM5 channel 4, source of TIM1
- *          channel 5 and reads source with NULL pointer.
+ * \details Sets an item for a channel without input remap, items of another timer and of another channel, a
+ *          selection code out of the remap field, a channel out of range and reads the source of a channel
+ *          without input remap and with NULL pointer.
  *
  * \par Expected results
- * - Pin: TIM_REQUEST_OK without register write, source reads back pin.
- * - Other cases: TIM_REQUEST_ERROR, OR of TIM3 and TIM5 stays 0.
+ * - All calls: TIM_REQUEST_ERROR, the source variable and OR of the timers stay unchanged.
  */
-void Ut_Tim_Set_InputSource_ChannelWithoutRemap_AcceptsPinOnly( void )
+void Ut_Tim_Set_InputSource_ChannelWithoutRemap_ReturnsError( void )
 {
-    tim_InputSource_t inputSource = TIM_INPUT_SOURCE_1;
+    tim_InputSource_t inputSource = TIM_INPUT_SOURCE_TIM5_CH4_PIN;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputSource( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_SOURCE_PIN ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_InputSource( TIM_PERIPH_3, TIM_CHANNEL_1, &inputSource ) );
-    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_PIN, inputSource );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, (tim_InputSource_t)TIM_INPUT_SOURCE_BIT_MASK_ENCODE( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, 0u ) ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_InputSource( UT_TIM_GP_PERIPH, TIM_CHANNEL_1, &inputSource ) );
+    TEST_ASSERT_EQUAL( TIM_INPUT_SOURCE_TIM5_CH4_PIN, inputSource );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_3, TIM_CHANNEL_1, TIM_INPUT_SOURCE_1 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, TIM_INPUT_SOURCE_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_1, TIM_CHANNEL_5, TIM_INPUT_SOURCE_PIN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, TIM_INPUT_SOURCE_TIM11_CH1_HSE_RTC ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_3, TIM_INPUT_SOURCE_TIM5_CH4_LSI ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, (tim_InputSource_t)TIM_INPUT_SOURCE_BIT_MASK_ENCODE( TIM_PERIPH_5, TIM_CHANNEL_4, 4u ) ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputSource( TIM_PERIPH_1, TIM_CHANNEL_5, TIM_INPUT_SOURCE_TIM5_CH4_PIN ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_InputSource( TIM_PERIPH_5, TIM_CHANNEL_4, NULL ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->OR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->OR );
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM5->OR );
 }
 
@@ -3495,11 +3659,11 @@ void Ut_Tim_Set_InputSource_ChannelWithoutRemap_AcceptsPinOnly( void )
  */
 void Ut_Tim_Set_InputCaptureFilter_WritesFilter( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputCaptureFilter( TIM_PERIPH_3, TIM_CHANNEL_2, TIM_INPUT_FILTER_FDIV16_N5 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_InputCaptureFilter( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, TIM_INPUT_FILTER_FDIV16_N5 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV16_N5, LL_TIM_IC_GetFilter( TIM3, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV16_N5, LL_TIM_IC_GetFilter( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputCaptureFilter( TIM_PERIPH_3, TIM_CHANNEL_2, TIM_INPUT_FILTER_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_InputCaptureFilter( UT_TIM_GP_PERIPH, TIM_CHANNEL_2, TIM_INPUT_FILTER_CNT ) );
 }
 
 
@@ -3515,13 +3679,13 @@ void Ut_Tim_Set_InputCaptureFilter_WritesFilter( void )
  */
 void Ut_Tim_Set_TriggerSource_SelectsChannelInputAndKeepsSlaveMode( void )
 {
-    TIM3->SMCR = LL_TIM_TS_ITR1 | LL_TIM_SLAVEMODE_GATED;
+    UT_TIM_GP_REG->SMCR = LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_GATED;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_TriggerSource( TIM_PERIPH_3, TIM_CHANNEL_2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_GATED, TIM3->SMCR );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_TriggerSource( UT_TIM_GP_PERIPH, TIM_CHANNEL_2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI2FP2 | LL_TIM_SLAVEMODE_GATED, UT_TIM_GP_REG->SMCR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_TriggerSource( TIM_PERIPH_3, TIM_CHANNEL_1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1FP1 | LL_TIM_SLAVEMODE_GATED, TIM3->SMCR );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_TriggerSource( UT_TIM_GP_PERIPH, TIM_CHANNEL_1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1FP1 | LL_TIM_SLAVEMODE_GATED, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -3537,17 +3701,17 @@ void Ut_Tim_Set_TriggerSource_SelectsChannelInputAndKeepsSlaveMode( void )
  */
 void Ut_Tim_Set_TriggerSource_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( TIM_PERIPH_3, TIM_CHANNEL_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( UT_TIM_GP_PERIPH, TIM_CHANNEL_3 ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( TIM_PERIPH_6, TIM_CHANNEL_1 ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( TIM_PERIPH_10, TIM_CHANNEL_1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( UT_TIM_1CH_PERIPH, TIM_CHANNEL_1 ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( TIM_PERIPH_CNT, TIM_CHANNEL_1 ) );
 
-    TIM3->CR1 = TIM_CR1_CEN;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( TIM_PERIPH_3, TIM_CHANNEL_1 ) );
+    UT_TIM_GP_REG->CR1 = TIM_CR1_CEN;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_TriggerSource( UT_TIM_GP_PERIPH, TIM_CHANNEL_1 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -3565,17 +3729,17 @@ void Ut_Tim_Set_ClockDivision_WritesCkd( void )
 {
     tim_ClockDiv_t clockDiv = TIM_CLOCK_DIV_1;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockDivision( TIM_PERIPH_3, TIM_CLOCK_DIV_4 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_CLOCKDIVISION_DIV4, TIM3->CR1 );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_ClockDivision( UT_TIM_GP_PERIPH, TIM_CLOCK_DIV_4 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_CLOCKDIVISION_DIV4, UT_TIM_GP_REG->CR1 );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockDivision( TIM_PERIPH_3, &clockDiv ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClockDivision( UT_TIM_GP_PERIPH, &clockDiv ) );
     TEST_ASSERT_EQUAL( TIM_CLOCK_DIV_4, clockDiv );
 
     /* Basic timer has no clock division */
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockDivision( TIM_PERIPH_6, TIM_CLOCK_DIV_2 ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockDivision( TIM_PERIPH_3, TIM_CLOCK_DIV_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_ClockDivision( UT_TIM_GP_PERIPH, TIM_CLOCK_DIV_CNT ) );
 }
 
 /* =========================== ENCODER, HALL SENSOR ========================= */
@@ -3601,19 +3765,19 @@ void Ut_Tim_Set_Mode_Encoder_ConfiguresInputsAndEncoderMode( void )
         .Period      = 1999u
     };
 
-    TIM3->PSC = 0x55u;
+    UT_TIM_GP_REG->PSC = 0x55u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_Encoder( UT_TIM_GP_PERIPH, &encoderConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ENCODERMODE_X4_TI12,  TIM3->SMCR & TIM_SMCR_SMS );
-    TEST_ASSERT_EQUAL_HEX32( 1999u, TIM3->ARR );
-    TEST_ASSERT_EQUAL_HEX32( 0u,    TIM3->PSC );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,  LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_RISING,   LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N8,   LL_TIM_IC_GetFilter( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N8,   LL_TIM_IC_GetFilter( TIM3, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ENCODERMODE_X4_TI12,  UT_TIM_GP_REG->SMCR & TIM_SMCR_SMS );
+    TEST_ASSERT_EQUAL_HEX32( 1999u, UT_TIM_GP_REG->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u,    UT_TIM_GP_REG->PSC );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_FALLING,  LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_RISING,   LL_TIM_IC_GetPolarity( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N8,   LL_TIM_IC_GetFilter( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N8,   LL_TIM_IC_GetFilter( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
 }
 
 
@@ -3665,41 +3829,41 @@ void Ut_Tim_Set_Mode_Encoder_InvalidConfig_ReturnsErrorWithoutWrite( void )
         .Period      = 100u
     };
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, &encoderConfig ) );
 
     encoderConfig.Ti1Polarity = TIM_INPUT_POLARITY_NORMAL;
     encoderConfig.Ti2Polarity = TIM_INPUT_POLARITY_BOTH_EDGES;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, &encoderConfig ) );
 
     encoderConfig.Ti2Polarity = TIM_INPUT_POLARITY_NORMAL;
     encoderConfig.EncoderMode = TIM_ENCODER_MODE_X1_TI1;        /* Not available on STM32F4 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, &encoderConfig ) );
 
     encoderConfig.EncoderMode = TIM_ENCODER_MODE_CNT;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, &encoderConfig ) );
 
     encoderConfig.EncoderMode = TIM_ENCODER_MODE_X2_TI1;
     encoderConfig.InputFilter = TIM_INPUT_FILTER_CNT;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, &encoderConfig ) );
 
     encoderConfig.InputFilter = TIM_INPUT_FILTER_INACTIVE;
     encoderConfig.Period      = 0x10000u;                       /* Over 16-bit resolution of TIM3 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, &encoderConfig ) );
 
     encoderConfig.Period = 100u;
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_6, &encoderConfig ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_10, &encoderConfig ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_1CH_PERIPH, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, NULL ) );
 
-    TIM3->CR1 = TIM_CR1_CEN;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
+    UT_TIM_16B_REG->CR1 = TIM_CR1_CEN;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_Encoder( UT_TIM_16B_PERIPH, &encoderConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCMR1 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->PSC );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->ARR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->CCMR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->PSC );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->ARR );
 }
 
 
@@ -3716,15 +3880,15 @@ void Ut_Tim_Get_EncoderPosition_ReadsCounter( void )
 {
     tim_Counter_t position = 0u;
 
-    TIM3->CNT = 123u;
+    UT_TIM_GP_REG->CNT = 123u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_EncoderPosition( TIM_PERIPH_3, &position ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_EncoderPosition( UT_TIM_GP_PERIPH, &position ) );
     TEST_ASSERT_EQUAL_UINT32( 123u, position );
 
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_EncoderPosition( TIM_PERIPH_6, &position ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_EncoderPosition( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_EncoderPosition( UT_TIM_GP_PERIPH, NULL ) );
 }
 
 
@@ -3747,10 +3911,10 @@ void Ut_Tim_Set_EncoderIndex_NotAvailable_ReturnsError( void )
         .FirstIndexOnly = TIM_FUNCTION_ACTIVE
     };
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EncoderIndex( TIM_PERIPH_3, &indexConfig ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EncoderIndex( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EncoderIndex( UT_TIM_GP_PERIPH, &indexConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EncoderIndex( UT_TIM_GP_PERIPH, NULL ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -3775,15 +3939,15 @@ void Ut_Tim_Set_Mode_HalSensor_ConfiguresHallInterface( void )
         .CommutationDelay = 100u
     };
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_HalSensor( TIM_PERIPH_3, &hallConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_HalSensor( UT_TIM_GP_PERIPH, &hallConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( TIM_CR2_TI1S, TIM3->CR2 & TIM_CR2_TI1S );                         /* XOR of TI1..TI3 */
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_TRC, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N4, LL_TIM_IC_GetFilter( TIM3, LL_TIM_CHANNEL_CH1 ) );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1F_ED | LL_TIM_SLAVEMODE_RESET, TIM3->SMCR );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_PWM2, LL_TIM_OC_GetMode( TIM3, LL_TIM_CHANNEL_CH2 ) );
-    TEST_ASSERT_EQUAL_HEX32( 100u, TIM3->CCR2 );
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TRGO_OC2REF, TIM3->CR2 & TIM_CR2_MMS );
+    TEST_ASSERT_EQUAL_HEX32( TIM_CR2_TI1S, UT_TIM_GP_REG->CR2 & TIM_CR2_TI1S );                         /* XOR of TI1..TI3 */
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_TRC, LL_TIM_IC_GetActiveInput( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_FILTER_FDIV1_N4, LL_TIM_IC_GetFilter( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH1 ) );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TS_TI1F_ED | LL_TIM_SLAVEMODE_RESET, UT_TIM_GP_REG->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_OCMODE_PWM2, LL_TIM_OC_GetMode( UT_TIM_GP_REG, LL_TIM_CHANNEL_CH2 ) );
+    TEST_ASSERT_EQUAL_HEX32( 100u, UT_TIM_GP_REG->CCR2 );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_TRGO_OC2REF, UT_TIM_GP_REG->CR2 & TIM_CR2_MMS );
 }
 
 
@@ -3807,33 +3971,33 @@ void Ut_Tim_Set_Mode_HalSensor_InvalidArgs_ReturnsErrorWithoutWrite( void )
         .CommutationDelay = 10u
     };
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_3, &hallConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( UT_TIM_16B_PERIPH, &hallConfig ) );
 
     hallConfig.InputPolarity = TIM_INPUT_POLARITY_NORMAL;
     hallConfig.InputFilter   = TIM_INPUT_FILTER_CNT;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_3, &hallConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( UT_TIM_16B_PERIPH, &hallConfig ) );
 
     hallConfig.InputFilter    = TIM_INPUT_FILTER_INACTIVE;
     hallConfig.InputPrescaler = TIM_INPUT_PRESCALER_CNT;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_3, &hallConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( UT_TIM_16B_PERIPH, &hallConfig ) );
 
     hallConfig.InputPrescaler   = TIM_INPUT_PRESCALER_DIV1;
     hallConfig.CommutationDelay = 0x10000u;                     /* Over 16-bit resolution of TIM3 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_3, &hallConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( UT_TIM_16B_PERIPH, &hallConfig ) );
 
     hallConfig.CommutationDelay = 10u;
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_6, &hallConfig ) );
 #endif /* TIM6 */
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_9, &hallConfig ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_3, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( UT_TIM_16B_PERIPH, NULL ) );
 
-    TIM3->CR1 = TIM_CR1_CEN;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( TIM_PERIPH_3, &hallConfig ) );
+    UT_TIM_16B_REG->CR1 = TIM_CR1_CEN;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Mode_HalSensor( UT_TIM_16B_PERIPH, &hallConfig ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR2 );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CCR2 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->CR2 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_16B_REG->CCR2 );
 }
 
 /* =========================== DEAD-TIME, BREAK ============================= */
@@ -3960,7 +4124,7 @@ void Ut_Tim_Set_DeadTime_TooLong_ReturnsErrorWithoutWrite( void )
  */
 void Ut_Tim_Set_DeadTime_GeneralTimer_ReturnsErrorWithoutRccAccess( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DeadTime( TIM_PERIPH_3, 100u, 100u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DeadTime( UT_TIM_GP_PERIPH, 100u, 100u ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DeadTime( TIM_PERIPH_CNT, 100u, 100u ) );
 }
 
@@ -4143,12 +4307,12 @@ void Ut_Tim_Set_BreakConfig_InvalidArgs_ReturnsErrorWithoutWrite( void )
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_BreakConfig( TIM_PERIPH_1, &breakConfig ) );
 
     breakConfig.BreakMode = TIM_BREAK_MODE_INPUT;
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_BreakConfig( TIM_PERIPH_3, &breakConfig ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Break2Config( TIM_PERIPH_3, &breakConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_BreakConfig( UT_TIM_GP_PERIPH, &breakConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_Break2Config( UT_TIM_GP_PERIPH, &breakConfig ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_BreakConfig( TIM_PERIPH_1, NULL ) );
 
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM1->BDTR );
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->BDTR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->BDTR );
 }
 
 
@@ -4170,7 +4334,7 @@ void Ut_Tim_Set_AutomaticOutput_TogglesAoe( void )
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_AutomaticOutputInactive( TIM_PERIPH_1 ) );
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM1->BDTR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_AutomaticOutputActive( TIM_PERIPH_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_AutomaticOutputActive( UT_TIM_GP_PERIPH ) );
 }
 
 
@@ -4223,7 +4387,7 @@ void Ut_Tim_Set_OffStateConfig_WritesOssiOssr( void )
     TEST_ASSERT_EQUAL_HEX32( TIM_BDTR_OSSR, TIM1->BDTR );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OffStateConfig( TIM_PERIPH_1, (tim_FunctionState_t)( TIM_FUNCTION_ACTIVE + 1u ), TIM_FUNCTION_ACTIVE ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OffStateConfig( TIM_PERIPH_3, TIM_FUNCTION_ACTIVE, TIM_FUNCTION_ACTIVE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_OffStateConfig( UT_TIM_GP_PERIPH, TIM_FUNCTION_ACTIVE, TIM_FUNCTION_ACTIVE ) );
 }
 
 
@@ -4242,7 +4406,7 @@ void Ut_Tim_Set_LockLevel_WritesLock( void )
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_LOCKLEVEL_2, TIM1->BDTR );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_LockLevel( TIM_PERIPH_1, TIM_LOCK_LEVEL_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_LockLevel( TIM_PERIPH_3, TIM_LOCK_LEVEL_1 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_LockLevel( UT_TIM_GP_PERIPH, TIM_LOCK_LEVEL_1 ) );
 }
 
 
@@ -4266,8 +4430,8 @@ void Ut_Tim_Set_CommutationPreload_WritesCcpcAndCcus( void )
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM1->CR2 & TIM_CR2_CCPC );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CommutationPreloadActive( TIM_PERIPH_1, TIM_COMMUTATION_UPDATE_CNT ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CommutationPreloadActive( TIM_PERIPH_3, TIM_COMMUTATION_UPDATE_COMG ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CommutationPreloadInactive( TIM_PERIPH_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CommutationPreloadActive( UT_TIM_GP_PERIPH, TIM_COMMUTATION_UPDATE_COMG ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_CommutationPreloadInactive( UT_TIM_GP_PERIPH ) );
 }
 
 /* ======================== DMA AND EXTERNAL TRIGGER ======================== */
@@ -4284,12 +4448,12 @@ void Ut_Tim_Set_CommutationPreload_WritesCcpcAndCcus( void )
  */
 void Ut_Tim_Set_DmaRequest_TogglesRequestEnable( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaRequestActive( TIM_PERIPH_3, TIM_DMA_REQUEST_UPDATE ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaRequestActive( TIM_PERIPH_3, TIM_DMA_REQUEST_CC2 ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_UDE | TIM_DIER_CC2DE, TIM3->DIER );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaRequestActive( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_UPDATE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaRequestActive( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_CC2 ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_UDE | TIM_DIER_CC2DE, UT_TIM_GP_REG->DIER );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaRequestInactive( TIM_PERIPH_3, TIM_DMA_REQUEST_UPDATE ) );
-    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_CC2DE, TIM3->DIER );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaRequestInactive( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_UPDATE ) );
+    TEST_ASSERT_EQUAL_HEX32( TIM_DIER_CC2DE, UT_TIM_GP_REG->DIER );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaRequestActive( TIM_PERIPH_1, TIM_DMA_REQUEST_COMMUTATION ) );
     TEST_ASSERT_EQUAL_HEX32( TIM_DIER_COMDE, TIM1->DIER );
@@ -4312,13 +4476,13 @@ void Ut_Tim_Set_DmaRequest_NotAvailable_ReturnsErrorWithoutWrite( void )
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaRequestActive( TIM_PERIPH_6, TIM_DMA_REQUEST_CC1 ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaRequestActive( TIM_PERIPH_6, TIM_DMA_REQUEST_TRIGGER ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaRequestActive( TIM_PERIPH_3, TIM_DMA_REQUEST_COMMUTATION ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaRequestActive( TIM_PERIPH_3, TIM_DMA_REQUEST_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaRequestActive( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_COMMUTATION ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaRequestActive( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_CNT ) );
 
 #if defined(TIM6)
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->DIER );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->DIER );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->DIER );
 
     /* Update DMA request is available on basic timer */
 #if defined(TIM6)
@@ -4337,9 +4501,9 @@ void Ut_Tim_Set_DmaRequest_NotAvailable_ReturnsErrorWithoutWrite( void )
  */
 void Ut_Tim_Set_DmaBurst_WritesDcr( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaBurst( TIM_PERIPH_3, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR1, 4u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_DmaBurst( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR1, 4u ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_DMABURST_BASEADDR_CCR1 | LL_TIM_DMABURST_LENGTH_4TRANSFERS, TIM3->DCR );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_DMABURST_BASEADDR_CCR1 | LL_TIM_DMABURST_LENGTH_4TRANSFERS, UT_TIM_GP_REG->DCR );
 }
 
 
@@ -4355,16 +4519,16 @@ void Ut_Tim_Set_DmaBurst_WritesDcr( void )
  */
 void Ut_Tim_Set_DmaBurst_InvalidArgs_ReturnsErrorWithoutWrite( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( TIM_PERIPH_3, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR1, 0u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( TIM_PERIPH_3, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR1, 19u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( TIM_PERIPH_3, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR5, 1u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( TIM_PERIPH_3, TIM_DMA_REQUEST_COMMUTATION, TIM_DMA_BURST_REG_CCR1, 1u ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( TIM_PERIPH_3, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CNT, 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR1, 0u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR1, 19u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CCR5, 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_COMMUTATION, TIM_DMA_BURST_REG_CCR1, 1u ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( UT_TIM_GP_PERIPH, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_CNT, 1u ) );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DmaBurst( TIM_PERIPH_6, TIM_DMA_REQUEST_UPDATE, TIM_DMA_BURST_REG_ARR, 1u ) );
 #endif /* TIM6 */
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->DCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->DCR );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->DCR );
 #endif /* TIM6 */
@@ -4385,8 +4549,8 @@ void Ut_Tim_Get_DmaRegAddr_ReturnsRegisterAddress( void )
 {
     tim_RegAddr_t regAddr = 0u;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_DmaRegAddr( TIM_PERIPH_3, TIM_DMA_REG_CCR2, &regAddr ) );
-    TEST_ASSERT_EQUAL_HEX32( (uint32_t)(uintptr_t)&TIM3->CCR2, regAddr );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_DmaRegAddr( UT_TIM_GP_PERIPH, TIM_DMA_REG_CCR2, &regAddr ) );
+    TEST_ASSERT_EQUAL_HEX32( (uint32_t)(uintptr_t)&UT_TIM_GP_REG->CCR2, regAddr );
 
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_DmaRegAddr( TIM_PERIPH_6, TIM_DMA_REG_ARR, &regAddr ) );
@@ -4395,8 +4559,8 @@ void Ut_Tim_Get_DmaRegAddr_ReturnsRegisterAddress( void )
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_DmaRegAddr( TIM_PERIPH_6, TIM_DMA_REG_CCR1, &regAddr ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_DmaRegAddr( TIM_PERIPH_6, TIM_DMA_REG_DMAR, &regAddr ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_DmaRegAddr( TIM_PERIPH_3, TIM_DMA_REG_CNT, &regAddr ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_DmaRegAddr( TIM_PERIPH_3, TIM_DMA_REG_ARR, NULL ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_DmaRegAddr( UT_TIM_GP_PERIPH, TIM_DMA_REG_CNT, &regAddr ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_DmaRegAddr( UT_TIM_GP_PERIPH, TIM_DMA_REG_ARR, NULL ) );
 }
 
 
@@ -4410,9 +4574,9 @@ void Ut_Tim_Get_DmaRegAddr_ReturnsRegisterAddress( void )
  */
 void Ut_Tim_Set_EtrConfig_WritesSmcrEtrFields( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrConfig( TIM_PERIPH_3, TIM_POLARITY_LOW, TIM_ETR_PRESCALER_DIV4, TIM_INPUT_FILTER_FDIV2_N6 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_EtrConfig( UT_TIM_GP_PERIPH, TIM_POLARITY_LOW, TIM_ETR_PRESCALER_DIV4, TIM_INPUT_FILTER_FDIV2_N6 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ETR_POLARITY_INVERTED | LL_TIM_ETR_PRESCALER_DIV4 | LL_TIM_ETR_FILTER_FDIV2_N6, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( LL_TIM_ETR_POLARITY_INVERTED | LL_TIM_ETR_PRESCALER_DIV4 | LL_TIM_ETR_FILTER_FDIV2_N6, UT_TIM_GP_REG->SMCR );
 }
 
 
@@ -4429,10 +4593,10 @@ void Ut_Tim_Set_EtrConfig_InvalidArgs_ReturnsErrorWithoutWrite( void )
 #if defined(TIM6)
     TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrConfig( TIM_PERIPH_6, TIM_POLARITY_HIGH, TIM_ETR_PRESCALER_DIV1, TIM_INPUT_FILTER_INACTIVE ) );
 #endif /* TIM6 */
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrConfig( TIM_PERIPH_3, TIM_POLARITY_HIGH, TIM_ETR_PRESCALER_CNT,  TIM_INPUT_FILTER_INACTIVE ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrConfig( TIM_PERIPH_3, TIM_POLARITY_HIGH, TIM_ETR_PRESCALER_DIV1, TIM_INPUT_FILTER_CNT ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrConfig( UT_TIM_GP_PERIPH, TIM_POLARITY_HIGH, TIM_ETR_PRESCALER_CNT,  TIM_INPUT_FILTER_INACTIVE ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrConfig( UT_TIM_GP_PERIPH, TIM_POLARITY_HIGH, TIM_ETR_PRESCALER_DIV1, TIM_INPUT_FILTER_CNT ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->SMCR );
 #if defined(TIM6)
     TEST_ASSERT_EQUAL_HEX32( 0u, TIM6->SMCR );
 #endif /* TIM6 */
@@ -4449,10 +4613,10 @@ void Ut_Tim_Set_EtrConfig_InvalidArgs_ReturnsErrorWithoutWrite( void )
  */
 void Ut_Tim_Set_EtrSource_NotAvailable_ReturnsError( void )
 {
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_PIN ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( TIM_PERIPH_2, TIM_ETR_SOURCE_3 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( UT_TIM_32B_PERIPH, TIM_ETR_SOURCE_PIN ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_EtrSource( UT_TIM_32B_PERIPH, TIM_ETR_SOURCE_3 ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM2->SMCR );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_32B_REG->SMCR );
 }
 
 /* ============== DITHERING, UIF REMAPPING (NOT AVAILABLE ON F4) ============== */
@@ -4471,13 +4635,13 @@ void Ut_Tim_Set_DitheringAndUifRemap_NotAvailable_ReturnsError( void )
     tim_Counter_t   counterValue = 0u;
     tim_FlagState_t overflowFlag = TIM_FLAG_INACTIVE;
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DitheringActive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DitheringInactive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_UifRemapActive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_UifRemapInactive( TIM_PERIPH_3 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CounterWithOverflow( TIM_PERIPH_3, &counterValue, &overflowFlag ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DitheringActive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_DitheringInactive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_UifRemapActive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Set_UifRemapInactive( UT_TIM_GP_PERIPH ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_Get_CounterWithOverflow( UT_TIM_GP_PERIPH, &counterValue, &overflowFlag ) );
 
-    TEST_ASSERT_EQUAL_HEX32( 0u, TIM3->CR1 );
+    TEST_ASSERT_EQUAL_HEX32( 0u, UT_TIM_GP_REG->CR1 );
 }
 
 
@@ -4502,7 +4666,8 @@ void Ut_Tim_InitIOPin_ConfiguresAlternateFunction( void )
 /**
  * \brief   GPIO error of complementary pin is reported.
  *
- * \details Initializes pin TIM1_CH1N PA7, GPIO mock returns error.
+ * \details Initializes pin TIM1_CH1N PA7 (the code is built by the encoding macro - the item
+ *          of the pin table does not exist on STM32F410Tx), GPIO mock returns error.
  *
  * \par Expected results
  * - TIM_REQUEST_ERROR.
@@ -4511,7 +4676,7 @@ void Ut_Tim_InitIOComplPin_GpioError_ReturnsError( void )
 {
     Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_7, GPIO_ALT_FUNC_1, GPIO_REQUEST_ERROR );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitIOComplPin( TIM_1_CH1N_PA7 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_ERROR, Tim_InitIOComplPin( UT_TIM_1_CH1N_PA7 ) );
 }
 
 
@@ -4538,8 +4703,9 @@ void Ut_Tim_InitTriggerAndBreakGpio_ConfiguresAlternateFunction( void )
 /**
  * \brief   Pins of STM32F4 alternate function groups are encoded correctly.
  *
- * \details Initializes pins TIM8_CH1 PC6 (AF3, TIM9_CH1 PA2 on MCUs without TIM8), TIM12_CH2
- *          PB15 (AF9, MCUs with TIM12 only), TIM5_CH4 PA3 (AF2) and TIM2_ETR PA15 (AF1).
+ * \details Initializes pins TIM8_CH1 PC6 (AF3, TIM9_CH1 PA2 on MCUs without TIM8 and on
+ *          STM32F412Cx - TIM8 without channel pins), TIM12_CH2 PB15 (AF9, MCUs with TIM12
+ *          only), TIM5_CH4 PA3 (AF2) and TIM2_ETR PA15 (AF1).
  *
  * \par Expected results
  * - Gpio_Init() called with port, pin and alternate function of the pin.
@@ -4547,7 +4713,8 @@ void Ut_Tim_InitTriggerAndBreakGpio_ConfiguresAlternateFunction( void )
  */
 void Ut_Tim_InitIOPin_Stm32F4AlternateFunctions_EncodedCorrectly( void )
 {
-#if defined(TIM8)
+#if defined(TIM8) && \
+    !defined(STM32F412Cx)
     Ut_Tim_Expect_GpioInit( GPIO_PORT_C, GPIO_PIN_ID_6,  GPIO_ALT_FUNC_3, GPIO_REQUEST_OK );
 #else
     Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_2,  GPIO_ALT_FUNC_3, GPIO_REQUEST_OK );
@@ -4556,9 +4723,10 @@ void Ut_Tim_InitIOPin_Stm32F4AlternateFunctions_EncodedCorrectly( void )
     Ut_Tim_Expect_GpioInit( GPIO_PORT_B, GPIO_PIN_ID_15, GPIO_ALT_FUNC_9, GPIO_REQUEST_OK );
 #endif /* TIM12 */
     Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_3,  GPIO_ALT_FUNC_2, GPIO_REQUEST_OK );
-    Ut_Tim_Expect_GpioInit( GPIO_PORT_A, GPIO_PIN_ID_15, GPIO_ALT_FUNC_1, GPIO_REQUEST_OK );
+    Ut_Tim_Expect_GpioInit( GPIO_PORT_A, UT_TIM_ETR_PIN_ID, GPIO_ALT_FUNC_1, GPIO_REQUEST_OK );
 
-#if defined(TIM8)
+#if defined(TIM8) && \
+    !defined(STM32F412Cx)
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitIOPin( TIM_8_CH1_PC6 ) );
 #else
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitIOPin( TIM_9_CH1_PA2 ) );
@@ -4567,7 +4735,7 @@ void Ut_Tim_InitIOPin_Stm32F4AlternateFunctions_EncodedCorrectly( void )
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitIOPin( TIM_12_CH2_PB15 ) );
 #endif /* TIM12 */
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitIOPin( TIM_5_CH4_PA3 ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitTriggerEventGpio( TIM_2_ETR_PA15 ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_InitTriggerEventGpio( UT_TIM_ETR_PIN ) );
 }
 
 

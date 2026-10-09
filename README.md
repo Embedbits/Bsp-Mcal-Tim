@@ -70,6 +70,34 @@ Everything else — configuration files, static tables, helper functions — is 
 
 ---
 
+## 🔗 Trigger inputs
+
+The trigger input of the slave mode controller / external clock mode 1 (`tim_ExtClkSource_t`, used by
+`Tim_Set_SlaveMode()`, `Tim_Set_ClockSource()` and the members `ExtClockSource` / `SlaveTriggerInput` of
+`tim_PeriphConfig_t`) is a list of the valid items of every timer, so a connection that the hardware does
+not have cannot be selected:
+
+- `TIM_TRIGGER_INPUT_<slave>_ITR<n>_<master timer>_<signal>` - internal trigger input named by the slave timer,
+  the input and the master timer signal behind it (e.g. `TIM_TRIGGER_INPUT_TIM3_ITR1_TIM2_TRGO`),
+- `TIM_TRIGGER_INPUT_<timer>_TI1F_ED` / `_TI1FP1` / `_TI2FP2` / `_ETRF` - inputs of the timer itself (`_ETRF` only
+  on the timers with the ETR input),
+- `TIM_TRIGGER_INPUT_UNUSED` - unused trigger input; an item of another timer is refused by the functions.
+
+The connections come from the tables "TIMx internal trigger connection" of the reference manuals (RM0090,
+RM0368, RM0383, RM0386, RM0390, RM0401, RM0402, RM0430): an item is active exactly on the device lines where
+the manual has the connection and the master exists (e.g. TIM2 ITR1 = TIM8 TRGO only on the devices with TIM8,
+LPTIM1 as the source of TIM5 / TIM9 ITR1 on STM32F410, `TIM_DEVICES_RM0401` is defined for its devices). The
+connections selected by a remap bit (LPTIM1 instead of TIM3 on STM32F413 / F423, TIM2 ITR1 from PTP / USB SOF)
+are not part of the list.
+
+The source of a timer channel input (`tim_InputSource_t`, `Tim_Set_InputSource()` / `Tim_Get_InputSource()`) is a list
+in the same way: `TIM_INPUT_SOURCE_<timer>_CH<n>_PIN` (the channel input pin) and
+`TIM_INPUT_SOURCE_<timer>_CH<n>_<signal>` exist only for the channels with the input remap of TIMx_OR - TIM5 channel 4
+(`_LSI`, `_LSE`, `_RTC_WKUP`) and TIM11 channel 1 (`_HSE_RTC`, `_SPDIFRX_FRAME_SYNC` on the devices with SPDIFRX) -
+the other channels have no input selection. The functions refuse an item of another timer or channel.
+
+---
+
 ## ⚙️ Typical Usage Example
 
 ```c

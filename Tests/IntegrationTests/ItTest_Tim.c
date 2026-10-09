@@ -88,7 +88,7 @@ static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag
 #define IT_TIM_SLAVE                        ( TIM_PERIPH_3 )
 
 /** Trigger input of IT_TIM_SLAVE connected to TRGO of IT_TIM_REF (TIM3 ITR1 = TIM2_TRGO) */
-#define IT_TIM_SLAVE_ITR                    ( TIM_EXT_CLK_SOURCE_ITR1 )
+#define IT_TIM_SLAVE_ITR                    ( TIM_TRIGGER_INPUT_TIM3_ITR1_TIM2_TRGO )
 
 /** Basic timer (time base only) - TIM11 on MCUs without TIM6 (STM32F401, STM32F411) */
 #if defined(TIM6)
@@ -860,7 +860,7 @@ void It_Tim_Set_SlaveMode_TriggerFromMasterEnable_SlaveStartsWithMaster( void )
     tim_PeriphConfig_t  timConfig;
     tim_FunctionState_t periphState = TIM_FUNCTION_ACTIVE;
     tim_SlaveMode_t     slaveMode   = TIM_SLAVE_MODE_DISABLE;
-    tim_TriggerInput_t  triggerIn   = TIM_EXT_CLK_SOURCE_ITR0;
+    tim_TriggerInput_t  triggerIn   = TIM_TRIGGER_INPUT_UNUSED;
     tim_Counter_t       counter     = 0u;
 
     /* Master: counter enable is used as trigger output */
