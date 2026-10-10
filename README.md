@@ -8,6 +8,8 @@ Each STM32 family is supported in a **dedicated branch** of this repository:
 - `STM32U5`
 - `STM32L4`
 - `STM32H5`
+- `STM32F4`
+- `STM32F7` (this branch - TIM1 / TIM8 with internal channels 5 / 6, break 2 input and trigger output 2, shared NVIC lines of TIM9 - TIM14)
 - and others as needed.
 
 ---
@@ -68,6 +70,49 @@ The user shall **only** interact with the following two public headers:
 
 Everything else — configuration files, static tables, helper functions — is **internal** and must not be accessed directly.
 
+### STM32F7 device errata
+
+Timer limitations of the device errata sheet (ES0334) without a workaround in the module:
+
+- **One-pulse mode trigger not detected in master-slave reset + trigger configuration** - cascaded
+  timers in one-pulse mode with the master in combined reset + trigger mode and MSM = 1: a trigger at
+  counter = ARR generates no pulse. Keep the master / slave mode (MSM) inactive unless cycle-accurate
+  synchronization is required.
+- **Consecutive compare event missed in specific conditions** - an abrupt compare value change
+  creating a single timer clock cycle wide pulse in toggle mode can be missed. Other output compare
+  modes are not affected; no workaround.
+- **Output compare clear not working with external counter reset** - with the slave modes reset,
+  combined reset + trigger or combined gated + reset, the PWM output stays inactive one extra
+  period after an output compare clear followed by a counter reset. Use the break input with the
+  automatic output enable instead of the output compare clear.
+
+The automatic output enable is refused while the clock security system is enabled (RCC CSSON) -
+behavior of the STM32F4 implementation kept for the same advanced-control timer.
+
+---
+
+## 🔗 Trigger inputs
+
+The trigger input of the slave mode controller / external clock mode 1 (`tim_ExtClkSource_t`, used by
+`Tim_Set_SlaveMode()`, `Tim_Set_ClockSource()` and the members `ExtClockSource` / `SlaveTriggerInput` of
+`tim_PeriphConfig_t`) is a list of the valid items of every timer, so a connection that the hardware does
+not have cannot be selected:
+
+- `TIM_TRIGGER_INPUT_<slave>_ITR<n>_<master timer>_<signal>` - internal trigger input named by the slave timer,
+  the input and the master timer signal behind it (e.g. `TIM_TRIGGER_INPUT_TIM3_ITR1_TIM2_TRGO`),
+- `TIM_TRIGGER_INPUT_<timer>_TI1F_ED` / `_TI1FP1` / `_TI2FP2` / `_ETRF` - inputs of the timer itself (`_ETRF` only
+  on the timers with the ETR input),
+- `TIM_TRIGGER_INPUT_UNUSED` - unused trigger input; an item of another timer is refused by the functions.
+
+The connections come from the tables "TIMx internal trigger connection" of the reference manuals (RM0385, RM0410, RM0431): an item is
+active exactly on the device lines where the manual has the connection and the master exists (e.g. TIM2 ITR1 = TIM8 TRGO only on the devices with TIM8; TIM9 / TIM12 have no ETRF); the connections selected by a remap bit (TIM2 ITR1 from ETH PTP / OTG FS SOF / OTG HS SOF) are not part of the list.
+
+The source of a timer channel input (`tim_InputSource_t`, `Tim_Set_InputSource()` / `Tim_Get_InputSource()`) is a list
+in the same way: `TIM_INPUT_SOURCE_<timer>_CH<n>_PIN` (the channel input pin) and
+`TIM_INPUT_SOURCE_<timer>_CH<n>_<signal>` exist only for the channels with the input remap of TIMx_OR - TIM5 channel 4
+(`_LSI`, `_LSE`, `_RTC_WKUP`) and TIM11 channel 1 (`_HSE_RTC`, `_SPDIFRX_FRAME_SYNC` on the devices with SPDIFRX, `_MCO1`) -
+the other channels have no input selection. The functions refuse an item of another timer or channel.
+
 ---
 
 ## ⚙️ Typical Usage Example
@@ -113,6 +158,8 @@ Each STM32 family has its own branch:
 | `STM32U5` | MCAL driver for STM32U5 family |
 | `STM32L4` | MCAL driver for STM32L4 family |
 | `STM32H5` | MCAL driver for STM32H5 family |
+| `STM32F4` | MCAL driver for STM32F4 family |
+| `STM32F7` | MCAL driver for STM32F7 family |
 
 These branches contain family-specific register definitions, channel mapping, and RCC/GPIO bindings while maintaining a common interface.
 
