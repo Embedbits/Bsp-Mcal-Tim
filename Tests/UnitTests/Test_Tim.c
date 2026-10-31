@@ -3457,8 +3457,11 @@ void Ut_Tim_Set_ClockDivision_WritesCkd( void )
  * \details PSC preset 0x55. TIM3 encoder x4 TI1 / TI2, TI1 normal, TI2 inverted,
  *          filter fDTS N=8, period 1999.
  *
+ * \note    Bug AB#1978: without an update event the preloaded prescaler 0 was not active (the
+ *          encoder counted every PSC + 1-th edge of the previous time base).
+ *
  * \par Expected results
- * - SMCR.SMS = encoder x4 TI12, ARR = 1999, PSC = 0.
+ * - SMCR.SMS = encoder x4 TI12, ARR = 1999, PSC = 0, update event generated (EGR.UG).
  * - Channels 1 and 2 direct TI, TI1 rising, TI2 falling, filter fDTS N=8.
  */
 void Ut_Tim_Set_Mode_Encoder_ConfiguresInputsAndEncoderMode( void )
@@ -3473,12 +3476,15 @@ void Ut_Tim_Set_Mode_Encoder_ConfiguresInputsAndEncoderMode( void )
     };
 
     TIM3->PSC = 0x55u;
+    TIM3->EGR = 0u;
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_Encoder( TIM_PERIPH_3, &encoderConfig ) );
 
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_ENCODERMODE_X4_TI12,  TIM3->SMCR & TIM_SMCR_SMS );
     TEST_ASSERT_EQUAL_HEX32( 1999u, TIM3->ARR );
     TEST_ASSERT_EQUAL_HEX32( 0u,    TIM3->PSC );
+    /* Bug AB#1978: the preloaded prescaler is loaded by an update event */
+    TEST_ASSERT_BITS_HIGH( TIM_EGR_UG, TIM3->EGR );
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH1 ) );
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_ACTIVEINPUT_DIRECTTI, LL_TIM_IC_GetActiveInput( TIM3, LL_TIM_CHANNEL_CH2 ) );
     TEST_ASSERT_EQUAL_HEX32( LL_TIM_IC_POLARITY_RISING,   LL_TIM_IC_GetPolarity( TIM3, LL_TIM_CHANNEL_CH1 ) );
