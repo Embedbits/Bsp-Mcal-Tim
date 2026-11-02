@@ -13,7 +13,7 @@
  * idle state, PWM).
  *
  * Used resources:
- * - TIM2 - 32-bit timer, reference time base 1 MHz (\ref It_Tim_Wait_RefTime)
+ * - TIM2 - 32-bit timer, reference time base 1 MHz (\ref ItTim_Wait_RefTime)
  * - TIM1 - advanced timer, channel 1 output on IT_TIM_PWM_* pin
  * - TIM3 - slave of TIM2 (internal trigger ITR1 = TIM2_TRGO), TIM1 on STM32L41x / L43x
  *          without TIM3 (TIM1 ITR1 = TIM2_TRGO as well)
@@ -23,6 +23,14 @@
  *                  resistor or solder bridge) and on connectors. Timer output
  *                  is read back by GPIO input data register (input stage is
  *                  active in alternate function mode), no external wiring.
+ * - IT_TIM_PAIR_SRC / IT_TIM_PAIR_DST - timer pair (pair tests): channels X / Y of the source timer
+ *   are wired to channels 1 / 2 of the other timer (pins of the wires in the board block).
+ *
+ * Fixture of the board (EmBi_Platform IntegrationTesting, "Board fixtures"): the wiring of the timer
+ * pair is the feature TIM_PAIR - the pair tests are ignored on a board with a fixture without it (a
+ * board without a fixture is expected to be wired) and on a board without a wiring known to the test
+ * set. The only STM32L4 board of the inventory is NUCLEO-L4R5ZI (STM32L4R5xI): TIM3 -> TIM8, PB4 - PC6
+ * (CH1), PB5 - PC7 (CH2).
  *
  * \note Expected frequencies are exact if the timer kernel clock is an integer
  *       multiple of 1 MHz (default clock configuration of Rcc_Init).
@@ -42,18 +50,27 @@
 
 /* ======================= FORWARD DECLARATIONS ============================= */
 
-static void It_Tim_Get_TimeBaseConfig   ( tim_PeriphConfig_t * const timConfig, tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq );
-static void It_Tim_Init_TimeBase        ( tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq );
-static void It_Tim_Init_PinChannel      ( tim_ChannelMode_t channelMode, tim_Polarity_t outputPolarity, tim_Polarity_t idleState );
-static void It_Tim_Apply_UpdateEvent    ( tim_PeriphId_t periphId );
-static void It_Tim_Wait_RefTime         ( tim_Counter_t waitTime_us );
-static void It_Tim_Wait_CallbackCount   ( volatile const uint32_t * const callbackCnt, uint32_t expectedCnt );
-static void It_Tim_WaitPinSettled       ( void );
-static void It_Tim_Check_PinLevel       ( gpio_PinLevel_t expectedLevel );
+static void ItTim_Get_TimeBaseConfig    ( tim_PeriphConfig_t * const timConfig, tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq );
+static void ItTim_Init_TimeBase         ( tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq );
+static void ItTim_Init_PinChannel       ( tim_ChannelMode_t channelMode, tim_Polarity_t outputPolarity, tim_Polarity_t idleState );
+static void ItTim_Apply_UpdateEvent     ( tim_PeriphId_t periphId );
+static void ItTim_Wait_RefTime          ( tim_Counter_t waitTime_us );
+static void ItTim_Wait_CallbackCount    ( volatile const uint32_t * const callbackCnt, uint32_t expectedCnt );
+static void ItTim_WaitPinSettled        ( void );
+static void ItTim_Check_PinLevel        ( gpio_PinLevel_t expectedLevel );
 
-static void It_Tim_UpdateCallback       ( void );
-static void It_Tim_Update2Callback      ( void );
-static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag );
+static void ItTim_UpdateCallback        ( void );
+static void ItTim_Update2Callback       ( void );
+static void ItTim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag );
+
+static void          ItTim_RequirePair         ( void );
+static void          ItTim_Init_PairSource     ( tim_ChannelMode_t channelMode,
+                                                  tim_Counter_t xCompare,
+                                                  tim_Counter_t yCompare );
+static tim_Counter_t ItTim_Wait_Capture        ( tim_ChannelId_t channelId );
+static tim_Counter_t ItTim_Get_PairDelta       ( tim_Counter_t first, tim_Counter_t second );
+static int32_t       ItTim_Measure_Encoder     ( tim_Counter_t xCompare, tim_Counter_t yCompare );
+static int32_t       ItTim_Get_Magnitude       ( int32_t value );
 
 /* ========================= SYMBOLIC CONSTANTS ============================= */
 
@@ -89,9 +106,38 @@ static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag
     #define IT_TIM_PWM_PORT                 ( GPIO_PORT_A )
     #define IT_TIM_PWM_PIN_ID               ( GPIO_PIN_ID_8 )
 
+
+    /** NUCLEO-L4R5ZI (inventory wires of the fixture feature TIM_PAIR): TIM3 CH1 PB4 -> TIM8 CH1 PC6 and
+     *  TIM3 CH2 PB5 -> TIM8 CH2 PC7 (TIM3 AF2, TIM8 AF3); other boards have no known wiring of a pair */
+    #if defined(IT_BOARD_STM32L4R5xI)
+        #define IT_TIM_PAIR_AVAILABLE       ( 1u )
+        #define IT_TIM_PAIR_SRC             ( TIM_PERIPH_3 )
+        #define IT_TIM_PAIR_SRC_X_CH        ( TIM_CHANNEL_1 )
+        #define IT_TIM_PAIR_SRC_X_PIN       ( TIM_3_CH1_PB4 )
+        #define IT_TIM_PAIR_SRC_Y_CH        ( TIM_CHANNEL_2 )
+        #define IT_TIM_PAIR_SRC_Y_PIN       ( TIM_3_CH2_PB5 )
+        #define IT_TIM_PAIR_DST             ( TIM_PERIPH_8 )
+        #define IT_TIM_PAIR_DST_X_PIN       ( TIM_8_CH1_PC6 )
+        #define IT_TIM_PAIR_DST_Y_PIN       ( TIM_8_CH2_PC7 )
+    #endif /* IT_BOARD_STM32L4R5xI */
+
 #else
     #error "Board of Tim integration tests is not defined (INTEGRATION_TEST_BOARD)."
 #endif
+
+/* Boards without a known wiring of a timer pair - the pair tests are ignored (the timers and pins are placeholders).
+ * Wiring of the inventory (EmBi_Tester): NUCLEO-L4R5ZI only. */
+#if !defined(IT_TIM_PAIR_AVAILABLE)
+    #define IT_TIM_PAIR_AVAILABLE           ( 0u )
+    #define IT_TIM_PAIR_SRC                 ( TIM_PERIPH_1 )
+    #define IT_TIM_PAIR_SRC_X_CH            ( TIM_CHANNEL_1 )
+    #define IT_TIM_PAIR_SRC_X_PIN           ( TIM_CH_PIN_UNUSED )
+    #define IT_TIM_PAIR_SRC_Y_CH            ( TIM_CHANNEL_2 )
+    #define IT_TIM_PAIR_SRC_Y_PIN           ( TIM_CH_PIN_UNUSED )
+    #define IT_TIM_PAIR_DST                 ( TIM_PERIPH_2 )
+    #define IT_TIM_PAIR_DST_X_PIN           ( TIM_CH_PIN_UNUSED )
+    #define IT_TIM_PAIR_DST_Y_PIN           ( TIM_CH_PIN_UNUSED )
+#endif /* IT_TIM_PAIR_AVAILABLE */
 
 /*------------------------------ Timers --------------------------------------*/
 
@@ -162,6 +208,35 @@ static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag
 /** Duty cycle 100 % [c%] */
 #define IT_TIM_DUTY_100                     ( 10000u )
 
+/*------------------------------ Timer pair ----------------------------------*/
+
+/** Refresh frequency of the capturing / encoder timer of the pair [Hz] (period 50000 counts) */
+#define IT_TIM_PAIR_DST_REFRESH_HZ          ( 20u )
+
+/** Period of the capturing timer of the pair [counts] */
+#define IT_TIM_PAIR_DST_PERIOD              ( IT_TIM_FREQ_HZ / IT_TIM_PAIR_DST_REFRESH_HZ )
+
+/** Duty cycle of the PWM of the source timer [c%] and the expected high time [counts] */
+#define IT_TIM_PAIR_DUTY                    ( 2500u )
+#define IT_TIM_PAIR_HIGH_TIME               ( ( ( IT_TIM_PERIOD + 1u ) * IT_TIM_PAIR_DUTY ) / IT_TIM_DUTY_100 )
+
+/** Tolerance of the captured period / high time [counts] */
+#define IT_TIM_PAIR_CAPTURE_TOL             ( 2u )
+
+/** Toggle points of the quadrature signal of the source timer (X at 0, Y a quarter of the signal later) */
+#define IT_TIM_PAIR_TOGGLE_EARLY            ( 0u )
+#define IT_TIM_PAIR_TOGGLE_LATE             ( ( IT_TIM_PERIOD + 1u ) / 2u )
+
+/** Measuring time of the encoder test [us] and the expected count (x4: 4 counts per 2 periods) */
+#define IT_TIM_PAIR_ENC_TIME_US             ( 50000u )
+#define IT_TIM_PAIR_ENC_COUNTS_PER_PERIOD   ( 2u )
+#define IT_TIM_PAIR_ENC_COUNT               ( ( IT_TIM_PAIR_ENC_TIME_US / ( IT_TIM_PERIOD + 1u ) ) * \
+                                              IT_TIM_PAIR_ENC_COUNTS_PER_PERIOD )
+#define IT_TIM_PAIR_ENC_TOL                 ( 8u )
+
+/** Encoder counter value at the start (middle of the period - both directions without overflow) */
+#define IT_TIM_PAIR_ENC_START               ( IT_TIM_PAIR_DST_PERIOD / 2u )
+
 /* ============================== MACROS ==================================== */
 
 /* ========================== LOCAL VARIABLES =============================== */
@@ -215,7 +290,7 @@ void It_Tim_Init_TimeBase_FrequencyAndPeriodReadBack( void )
     tim_Counter_t       period      = 0u;
     tim_FunctionState_t periphState = TIM_FUNCTION_ACTIVE;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_ClkInternal( IT_TIM_REF, &timerFreq ) );
     TEST_ASSERT_EQUAL_UINT32( IT_TIM_FREQ_HZ, timerFreq );
@@ -244,7 +319,7 @@ void It_Tim_Init_RunningTimer_ReturnsError( void )
 {
     tim_PeriphConfig_t timConfig;
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
 
@@ -269,15 +344,15 @@ void It_Tim_Init_FirstPeriod_RunsAtTimerFrequency( void )
     tim_FlagState_t    updateFlag = TIM_FLAG_ACTIVE;
     tim_Counter_t      counter    = 0u;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
 
     /* Timer 10 kHz, period 1 s - Tim_Init loads prescaler and clears update flag */
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_SLAVE, 10000u, 1u );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_SLAVE, 10000u, 1u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_SLAVE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF   ) );
-    It_Tim_Wait_RefTime( 10000u );
+    ItTim_Wait_RefTime( 10000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_SLAVE ) );
 
     /* Prescaler must be effective from the start - no overflow within 10 ms */
@@ -305,7 +380,7 @@ void It_Tim_Deinit_InitializedTimer_PeripheralReset( void )
     tim_FunctionState_t irqState = TIM_FUNCTION_ACTIVE;
     tim_Counter_t       period   = 0u;
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_REF, TIM_IRQ_UPDATE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
@@ -313,7 +388,7 @@ void It_Tim_Deinit_InitializedTimer_PeripheralReset( void )
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Deinit( &timConfig ) );
 
     /* Re-initialization with other period - interrupt enable is in reset state */
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, 100u );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, 100u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_IrqState( IT_TIM_REF, TIM_IRQ_UPDATE, &irqState ) );
@@ -338,14 +413,14 @@ void It_Tim_Start_InternalClock_CounterIncrements( void )
     tim_Counter_t       counter     = 0u;
     tim_FunctionState_t periphState = TIM_FUNCTION_INACTIVE;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PeriphState( IT_TIM_REF, &periphState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, periphState );
 
-    It_Tim_Wait_RefTime( 1000u );
+    ItTim_Wait_RefTime( 1000u );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( IT_TIM_REF, &counter ) );
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32( 1000u, counter );
@@ -368,13 +443,13 @@ void It_Tim_Pause_RunningCounter_CounterValueKept( void )
     tim_Counter_t counterPaused = 0u;
     tim_Counter_t counterLater  = 0u;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
-    It_Tim_Wait_RefTime( 1000u );
+    ItTim_Wait_RefTime( 1000u );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_REF ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( IT_TIM_REF, &counterPaused ) );
-    It_Tim_WaitPinSettled();
+    ItTim_WaitPinSettled();
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( IT_TIM_REF, &counterLater ) );
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32( 1000u, counterPaused );
@@ -382,7 +457,7 @@ void It_Tim_Pause_RunningCounter_CounterValueKept( void )
 
     /* Start resumes counting from the paused value */
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
-    It_Tim_Wait_RefTime( counterPaused + 1000u );
+    ItTim_Wait_RefTime( counterPaused + 1000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( IT_TIM_REF, &counterLater ) );
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32( counterPaused + 1000u, counterLater );
 }
@@ -401,16 +476,16 @@ void It_Tim_Stop_RunningCounter_CounterResetAndStopped( void )
     tim_Counter_t       counter     = 1u;
     tim_FunctionState_t periphState = TIM_FUNCTION_ACTIVE;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
-    It_Tim_Wait_RefTime( 1000u );
+    ItTim_Wait_RefTime( 1000u );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Stop( IT_TIM_REF ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PeriphState( IT_TIM_REF, &periphState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_INACTIVE, periphState );
 
-    It_Tim_WaitPinSettled();
+    ItTim_WaitPinSettled();
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( IT_TIM_REF, &counter ) );
     TEST_ASSERT_EQUAL_UINT32( 0u, counter );
 }
@@ -431,8 +506,8 @@ void It_Tim_Set_CounterDirection_Down_CounterDecrements( void )
     tim_Counter_t    counter    = 0u;
     tim_CounterDir_t counterDir = TIM_COUNTER_DIR_UP;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
-    It_Tim_Init_TimeBase( IT_TIM_SLAVE, IT_TIM_FREQ_HZ, 20u );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_SLAVE, IT_TIM_FREQ_HZ, 20u );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CounterDirection( IT_TIM_SLAVE, TIM_COUNTER_DIR_DOWN ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CounterDirection( IT_TIM_SLAVE, &counterDir ) );
@@ -442,7 +517,7 @@ void It_Tim_Set_CounterDirection_Down_CounterDecrements( void )
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_SLAVE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF   ) );
-    It_Tim_Wait_RefTime( 10000u );
+    ItTim_Wait_RefTime( 10000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_SLAVE ) );
 
     /* 10 ms at 1 MHz: 40000 -> ~30000 */
@@ -466,12 +541,12 @@ void It_Tim_Set_ClkInternal_TwoTimers_CountRatioMatchesFrequencies( void )
     tim_Counter_t basicCounter = 0u;
 
     /* 1 MHz reference and 10 kHz basic timer, both without overflow for 1 s */
-    It_Tim_Init_TimeBase( IT_TIM_REF,   IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
-    It_Tim_Init_TimeBase( IT_TIM_BASIC, 10000u,             1u                    );
+    ItTim_Init_TimeBase( IT_TIM_REF,   IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_BASIC, 10000u,             1u                    );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_BASIC ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF   ) );
-    It_Tim_Wait_RefTime( 500000u );
+    ItTim_Wait_RefTime( 500000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_REF   ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_BASIC ) );
 
@@ -497,7 +572,7 @@ void It_Tim_Set_OnePulseModeActive_CounterStopsAfterUpdate( void )
     tim_FlagState_t     updateFlag  = TIM_FLAG_INACTIVE;
     tim_Counter_t       counter     = 1u;
 
-    It_Tim_Init_TimeBase( IT_TIM_SLAVE, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_SLAVE, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OnePulseModeActive( IT_TIM_SLAVE ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_SLAVE ) );
@@ -541,7 +616,7 @@ void It_Tim_Generate_Event_Update_CounterResetAndFlagSet( void )
     tim_FlagState_t updateFlag = TIM_FLAG_INACTIVE;
     tim_Counter_t   counter    = 1u;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( IT_TIM_REF, 500u ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Generate_Event( IT_TIM_REF, TIM_EVENT_UPDATE ) );
@@ -570,7 +645,7 @@ void It_Tim_Get_Flag_CounterOverflow_UpdateFlagActive( void )
 {
     tim_FlagState_t updateFlag = TIM_FLAG_INACTIVE;
 
-    It_Tim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Flag( IT_TIM_BASIC, TIM_IRQ_UPDATE, &updateFlag ) );
     TEST_ASSERT_EQUAL( TIM_FLAG_INACTIVE, updateFlag );
@@ -613,7 +688,7 @@ void It_Tim_Get_CounterWithOverflow_UifRemap_OverflowFlagInCounter( void )
     tim_FlagState_t updateFlag   = TIM_FLAG_INACTIVE;
     tim_Counter_t   counter      = 0u;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UifRemapActive( IT_TIM_REF ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CounterWithOverflow( IT_TIM_REF, &counter, &overflowFlag ) );
@@ -658,15 +733,15 @@ void It_Tim_Set_IrqActive_UpdateInterrupt_CallbackCalled( void )
 {
     tim_FunctionState_t irqState = TIM_FUNCTION_INACTIVE;
 
-    It_Tim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_BASIC, It_Tim_UpdateCallback ) );
+    ItTim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_BASIC, ItTim_UpdateCallback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_BASIC, TIM_IRQ_UPDATE ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_IrqState( IT_TIM_BASIC, TIM_IRQ_UPDATE, &irqState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, irqState );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_BASIC ) );
-    It_Tim_Wait_CallbackCount( &itTim_UpdateCallbackCnt, 3u );
+    ItTim_Wait_CallbackCount( &itTim_UpdateCallbackCnt, 3u );
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32( 3u, itTim_UpdateCallbackCnt );
 }
@@ -686,8 +761,8 @@ void It_Tim_Set_IrqInactive_UpdateInterrupt_CallbackNotCalled( void )
 {
     tim_FlagState_t updateFlag = TIM_FLAG_INACTIVE;
 
-    It_Tim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_BASIC, It_Tim_UpdateCallback ) );
+    ItTim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_BASIC, ItTim_UpdateCallback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive  ( IT_TIM_BASIC, TIM_IRQ_UPDATE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqInactive( IT_TIM_BASIC, TIM_IRQ_UPDATE ) );
 
@@ -724,15 +799,15 @@ void It_Tim_Set_IrqInactive_UpdateInterrupt_CallbackNotCalled( void )
  */
 void It_Tim_Set_UpdateCallback_UpdateRateMatchesRefreshFreq( void )
 {
-    It_Tim_Init_TimeBase( IT_TIM_REF,   IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
-    It_Tim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
+    ItTim_Init_TimeBase( IT_TIM_REF,   IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_BASIC, IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_BASIC, It_Tim_UpdateCallback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_BASIC, ItTim_UpdateCallback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_BASIC, TIM_IRQ_UPDATE ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_BASIC ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF   ) );
-    It_Tim_Wait_RefTime( 100000u );
+    ItTim_Wait_RefTime( 100000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_BASIC ) );
 
     /* 100 ms at 1 kHz refresh frequency */
@@ -755,21 +830,21 @@ void It_Tim_Set_RepetitionCounter_Rep9_UpdateRateDividedBy10( void )
 {
     tim_RepCnt_t repetitionCnt = 0u;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
 
     /* Counter period 100 us, update event every 10th overflow (1 ms) */
-    It_Tim_Init_TimeBase( IT_TIM_ADV, IT_TIM_FREQ_HZ, 10000u );
+    ItTim_Init_TimeBase( IT_TIM_ADV, IT_TIM_FREQ_HZ, 10000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_RepetitionCounter( IT_TIM_ADV, 9u ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_RepetitionCounter( IT_TIM_ADV, &repetitionCnt ) );
     TEST_ASSERT_EQUAL_UINT16( 9u, repetitionCnt );
-    It_Tim_Apply_UpdateEvent( IT_TIM_ADV );
+    ItTim_Apply_UpdateEvent( IT_TIM_ADV );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_ADV, It_Tim_UpdateCallback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_ADV, ItTim_UpdateCallback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_ADV, TIM_IRQ_UPDATE ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_ADV ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
-    It_Tim_Wait_RefTime( 100000u );
+    ItTim_Wait_RefTime( 100000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_ADV ) );
 
     TEST_ASSERT_UINT32_WITHIN( 2u, 100u, itTim_UpdateCallbackCnt );
@@ -793,7 +868,7 @@ void It_Tim_Set_CompareValue_CompareMatch_CaptureCompareCallbackCalled( void )
     tim_PeriphConfig_t timConfig;
     tim_Counter_t      compareValue = 0u;
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState = TIM_FUNCTION_ACTIVE;
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode  = TIM_CHANNEL_MODE_OUTPUT_FROZEN;
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
@@ -802,11 +877,11 @@ void It_Tim_Set_CompareValue_CompareMatch_CaptureCompareCallbackCalled( void )
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CompareValue( IT_TIM_REF, TIM_CHANNEL_1, &compareValue ) );
     TEST_ASSERT_EQUAL_UINT32( 500u, compareValue );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( IT_TIM_REF, TIM_CHANNEL_1, It_Tim_CaptureCompareCallback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( IT_TIM_REF, TIM_CHANNEL_1, ItTim_CaptureCompareCallback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_REF, TIM_IRQ_CAPTURE_COMPARE_CH1 ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
-    It_Tim_Wait_CallbackCount( &itTim_CcCallbackCnt, 2u );
+    ItTim_Wait_CallbackCount( &itTim_CcCallbackCnt, 2u );
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32( 2u, itTim_CcCallbackCnt );
     TEST_ASSERT_EQUAL( TIM_OVERCAPTURE_INACTIVE, itTim_CcOvercapture );
@@ -829,7 +904,7 @@ void It_Tim_Get_CaptureValue_SoftwareCaptureEvent_CounterCaptured( void )
     tim_Counter_t      captureValue = 0u;
     tim_FlagState_t    captureFlag  = TIM_FLAG_INACTIVE;
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState = TIM_FUNCTION_ACTIVE;
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode  = TIM_CHANNEL_MODE_INPUT_CAPTURE;
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
@@ -864,16 +939,16 @@ void It_Tim_Set_CaptureCompareCallback_SoftwareCapture_CallbackCalled( void )
 {
     tim_PeriphConfig_t timConfig;
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState = TIM_FUNCTION_ACTIVE;
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode  = TIM_CHANNEL_MODE_INPUT_CAPTURE;
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( IT_TIM_REF, TIM_CHANNEL_1, It_Tim_CaptureCompareCallback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CaptureCompareCallback( IT_TIM_REF, TIM_CHANNEL_1, ItTim_CaptureCompareCallback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_REF, TIM_IRQ_CAPTURE_COMPARE_CH1 ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Generate_Event( IT_TIM_REF, TIM_EVENT_CC1 ) );
-    It_Tim_Wait_CallbackCount( &itTim_CcCallbackCnt, 1u );
+    ItTim_Wait_CallbackCount( &itTim_CcCallbackCnt, 1u );
 
     /* Flag is cleared by the interrupt handler, no over-capture */
     TEST_ASSERT_EQUAL_UINT32( 1u, itTim_CcCallbackCnt );
@@ -898,12 +973,12 @@ void It_Tim_Set_ClockSource_ItrFromMasterUpdate_SlaveCountsMasterEvents( void )
     tim_Counter_t      counter = 0u;
 
     /* Master: UG bit is used as trigger output */
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     timConfig.MasterTrigger = TIM_MASTER_TRIGGER_RESET;
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
 
     /* Slave: clocked by master trigger output (external clock mode 1) */
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_SLAVE, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_SLAVE, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     timConfig.ClockSource    = TIM_CLOCKSOURCE_EXTERNAL_CH_IN;
     timConfig.ExtClockSource = IT_TIM_SLAVE_ITR;
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
@@ -912,7 +987,7 @@ void It_Tim_Set_ClockSource_ItrFromMasterUpdate_SlaveCountsMasterEvents( void )
     for( uint32_t eventIdx = 0u; 5u > eventIdx; eventIdx++ )
     {
         TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Generate_Event( IT_TIM_REF, TIM_EVENT_UPDATE ) );
-        It_Tim_WaitPinSettled();
+        ItTim_WaitPinSettled();
     }
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( IT_TIM_SLAVE, &counter ) );
@@ -940,12 +1015,12 @@ void It_Tim_Set_SlaveMode_TriggerFromMasterEnable_SlaveStartsWithMaster( void )
     tim_Counter_t       counter     = 0u;
 
     /* Master: counter enable is used as trigger output */
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
     timConfig.MasterTrigger = TIM_MASTER_TRIGGER_ENABLE;
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
 
     /* Slave: counter started by rising edge of trigger input */
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_SLAVE, IT_TIM_FREQ_HZ, 20u );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_SLAVE, IT_TIM_FREQ_HZ, 20u );
     timConfig.SlaveMode         = TIM_SLAVE_MODE_TRIGGER;
     timConfig.SlaveTriggerInput = IT_TIM_SLAVE_ITR;
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
@@ -959,7 +1034,7 @@ void It_Tim_Set_SlaveMode_TriggerFromMasterEnable_SlaveStartsWithMaster( void )
 
     /* Start of master starts the slave */
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
-    It_Tim_Wait_RefTime( 1000u );
+    ItTim_Wait_RefTime( 1000u );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PeriphState( IT_TIM_SLAVE, &periphState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_ACTIVE, periphState );
@@ -980,9 +1055,9 @@ void It_Tim_Set_SlaveMode_TriggerFromMasterEnable_SlaveStartsWithMaster( void )
  */
 void It_Tim_Set_Mode_ForcedOutput_ForcedActive_PinReadsHigh( void )
 {
-    It_Tim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_ACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
+    ItTim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_ACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
 
-    It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
+    ItTim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
 }
 
 
@@ -996,9 +1071,9 @@ void It_Tim_Set_Mode_ForcedOutput_ForcedActive_PinReadsHigh( void )
  */
 void It_Tim_Set_Mode_ForcedOutput_ForcedInactive_PinReadsLow( void )
 {
-    It_Tim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_INACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
+    ItTim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_INACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
 
-    It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
+    ItTim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
 }
 
 
@@ -1016,14 +1091,14 @@ void It_Tim_Set_OutputPolarity_LowForcedActive_PinReadsLow( void )
 {
     tim_Polarity_t outputPolarity = TIM_POLARITY_HIGH;
 
-    It_Tim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_ACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
-    It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
+    ItTim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_ACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
+    ItTim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OutputPolarity( IT_TIM_ADV, TIM_OUTPUT_1, TIM_POLARITY_LOW ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_OutputPolarity( IT_TIM_ADV, TIM_OUTPUT_1, &outputPolarity ) );
     TEST_ASSERT_EQUAL( TIM_POLARITY_LOW, outputPolarity );
 
-    It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
+    ItTim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
 }
 
 
@@ -1042,8 +1117,8 @@ void It_Tim_Set_MainOutputInactive_OffStateIdleHigh_PinReadsIdleLevel( void )
 {
     tim_FunctionState_t outputState = TIM_FUNCTION_ACTIVE;
 
-    It_Tim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_INACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_HIGH );
-    It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
+    ItTim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_FORCED_INACTIVE, TIM_POLARITY_HIGH, TIM_POLARITY_HIGH );
+    ItTim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
 
     /* Off-state in idle mode: output drives idle level when main output is disabled */
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_OffStateConfig( IT_TIM_ADV, TIM_FUNCTION_ACTIVE, TIM_FUNCTION_INACTIVE ) );
@@ -1051,10 +1126,10 @@ void It_Tim_Set_MainOutputInactive_OffStateIdleHigh_PinReadsIdleLevel( void )
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_MainOutputState( IT_TIM_ADV, &outputState ) );
     TEST_ASSERT_EQUAL( TIM_FUNCTION_INACTIVE, outputState );
-    It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
+    ItTim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_MainOutputActive( IT_TIM_ADV ) );
-    It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
+    ItTim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
 }
 
 
@@ -1071,13 +1146,13 @@ void It_Tim_Set_MainOutputInactive_OffStateIdleHigh_PinReadsIdleLevel( void )
  */
 void It_Tim_Set_PwmMode_DutyCycle_0And100Percent_PinConstantLevel( void )
 {
-    It_Tim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_PWM, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
+    ItTim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_PWM, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_ADV ) );
 
     /* PWM starts with 0 % duty cycle */
     for( uint32_t sampleIdx = 0u; 1000u > sampleIdx; sampleIdx++ )
     {
-        It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
+        ItTim_Check_PinLevel( GPIO_PIN_LEVEL_LOW );
     }
 
     /* 100 % - compare value above period, applied at next update event */
@@ -1086,7 +1161,7 @@ void It_Tim_Set_PwmMode_DutyCycle_0And100Percent_PinConstantLevel( void )
 
     for( uint32_t sampleIdx = 0u; 1000u > sampleIdx; sampleIdx++ )
     {
-        It_Tim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
+        ItTim_Check_PinLevel( GPIO_PIN_LEVEL_HIGH );
     }
 }
 
@@ -1111,7 +1186,7 @@ void It_Tim_Set_PwmMode_DutyCycle_25Percent_PinFollowsCounter( void )
     uint32_t            highSamples  = 0u;
     uint32_t            lowSamples   = 0u;
 
-    It_Tim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_PWM, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
+    ItTim_Init_PinChannel( TIM_CHANNEL_MODE_OUTPUT_PWM, TIM_POLARITY_HIGH, TIM_POLARITY_LOW );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_PwmMode_DutyCycle( IT_TIM_ADV, TIM_CHANNEL_1, 2500u ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_PwmMode_DutyCycle( IT_TIM_ADV, TIM_CHANNEL_1, &dutyCycle ) );
@@ -1175,19 +1250,19 @@ void It_Tim_Set_PwmMode_DutyCycle_25Percent_PinFollowsCounter( void )
  */
 void It_Tim_Set_IrqActive_Tim1AndTim16_SharedUpdateLine_BothCallbacks( void )
 {
-    It_Tim_Init_TimeBase( IT_TIM_REF,       IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
-    It_Tim_Init_TimeBase( IT_TIM_ADV,       IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
-    It_Tim_Init_TimeBase( IT_TIM_SHARED_UP, IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
+    ItTim_Init_TimeBase( IT_TIM_REF,       IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_ADV,       IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
+    ItTim_Init_TimeBase( IT_TIM_SHARED_UP, IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_ADV,       It_Tim_UpdateCallback  ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_UP, It_Tim_Update2Callback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_ADV,       ItTim_UpdateCallback  ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_UP, ItTim_Update2Callback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_ADV,       TIM_IRQ_UPDATE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_SHARED_UP, TIM_IRQ_UPDATE ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_ADV       ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_SHARED_UP ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF       ) );
-    It_Tim_Wait_RefTime( 100000u );
+    ItTim_Wait_RefTime( 100000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_ADV       ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_SHARED_UP ) );
 
@@ -1208,18 +1283,18 @@ void It_Tim_Set_IrqActive_Tim1AndTim16_SharedUpdateLine_BothCallbacks( void )
 void It_Tim_Set_IrqActive_Tim15AndTim17_SharedLines_CallbacksCalled( void )
 {
 #if defined(TIM17)
-    It_Tim_Init_TimeBase( IT_TIM_SHARED_BRK, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
-    It_Tim_Init_TimeBase( IT_TIM_SHARED_TRG, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_SHARED_BRK, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_SHARED_TRG, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_BRK, It_Tim_UpdateCallback  ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_TRG, It_Tim_Update2Callback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_BRK, ItTim_UpdateCallback  ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_TRG, ItTim_Update2Callback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_SHARED_BRK, TIM_IRQ_UPDATE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_SHARED_TRG, TIM_IRQ_UPDATE ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_SHARED_BRK ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_SHARED_TRG ) );
-    It_Tim_Wait_CallbackCount( &itTim_UpdateCallbackCnt,  3u );
-    It_Tim_Wait_CallbackCount( &itTim_Update2CallbackCnt, 3u );
+    ItTim_Wait_CallbackCount( &itTim_UpdateCallbackCnt,  3u );
+    ItTim_Wait_CallbackCount( &itTim_Update2CallbackCnt, 3u );
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32( 3u, itTim_UpdateCallbackCnt  );
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32( 3u, itTim_Update2CallbackCnt );
@@ -1246,32 +1321,122 @@ void It_Tim_Deinit_Tim16_SharedLineKeptForTim1( void )
 {
     tim_PeriphConfig_t timConfig;
 
-    It_Tim_Init_TimeBase( IT_TIM_REF,       IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
-    It_Tim_Init_TimeBase( IT_TIM_ADV,       IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
-    It_Tim_Init_TimeBase( IT_TIM_SHARED_UP, IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
+    ItTim_Init_TimeBase( IT_TIM_REF,       IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    ItTim_Init_TimeBase( IT_TIM_ADV,       IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
+    ItTim_Init_TimeBase( IT_TIM_SHARED_UP, IT_TIM_FREQ_HZ,     IT_TIM_REFRESH_HZ     );
 
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_ADV,       It_Tim_UpdateCallback  ) );
-    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_UP, It_Tim_Update2Callback ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_ADV,       ItTim_UpdateCallback  ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_UpdateCallback( IT_TIM_SHARED_UP, ItTim_Update2Callback ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_ADV,       TIM_IRQ_UPDATE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_IrqActive( IT_TIM_SHARED_UP, TIM_IRQ_UPDATE ) );
 
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_ADV       ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_SHARED_UP ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF       ) );
-    It_Tim_Wait_RefTime( 50000u );
+    ItTim_Wait_RefTime( 50000u );
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_SHARED_UP, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_SHARED_UP, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Deinit( &timConfig ) );
     itTim_UpdateCallbackCnt  = 0u;
     itTim_Update2CallbackCnt = 0u;
 
-    It_Tim_Wait_RefTime( 100000u );
+    ItTim_Wait_RefTime( 100000u );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Pause( IT_TIM_ADV ) );
 
     TEST_ASSERT_UINT32_WITHIN( 2u, 50u, itTim_UpdateCallbackCnt );
     TEST_ASSERT_EQUAL_UINT32( 0u, itTim_Update2CallbackCnt );
 }
 
+
+/*------------------------------ Timer pair (TIM_PAIR) -----------------------*/
+
+/**
+ * \brief   PWM of the source timer is measured by input capture of the timer pair.
+ *
+ * \details Source timer of the pair: channel X PWM 1 kHz (period 1000 counts at 1 MHz), duty
+ *          25 %. Capturing timer (1 MHz, period 50000): channel 1 captures the rising edges
+ *          of its pin (wired to X), channel 2 the falling edges of the same input (indirect
+ *          mapping of TI1). Rising, falling and next rising edge are captured.
+ *
+ * \par Expected results
+ * - Period between two rising edges 1000 +- 2 counts.
+ * - High time between rising and falling edge 250 +- 2 counts.
+ */
+void It_Tim_Pair_PwmInputCapture_PeriodAndHighTimeMeasured( void )
+{
+    tim_PeriphConfig_t timConfig;
+
+    ItTim_RequirePair();
+
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_PAIR_DST, IT_TIM_FREQ_HZ, IT_TIM_PAIR_DST_REFRESH_HZ );
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState  = TIM_FUNCTION_ACTIVE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode   = TIM_CHANNEL_MODE_INPUT_CAPTURE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].IoPin         = IT_TIM_PAIR_DST_X_PIN;
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].InputPolarity = TIM_INPUT_POLARITY_NORMAL;
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ActiveInput   = TIM_ACTIVE_INPUT_DIRECT;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].ChannelState  = TIM_FUNCTION_ACTIVE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].ChannelMode   = TIM_CHANNEL_MODE_INPUT_CAPTURE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].IoPin         = IT_TIM_PAIR_DST_Y_PIN;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].InputPolarity = TIM_INPUT_POLARITY_INVERTED;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].ActiveInput   = TIM_ACTIVE_INPUT_INDIRECT;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
+
+    ItTim_Init_PairSource( TIM_CHANNEL_MODE_OUTPUT_PWM, IT_TIM_PAIR_HIGH_TIME, IT_TIM_PAIR_HIGH_TIME );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_PAIR_DST ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_PAIR_SRC ) );
+
+    /* Captures of the start of the PWM are discarded, every wait clears the capture flag first -
+     * the captured edge follows the previous one */
+    (void)ItTim_Wait_Capture( TIM_CHANNEL_1 );
+
+    const tim_Counter_t riseFirst  = ItTim_Wait_Capture( TIM_CHANNEL_1 );
+    const tim_Counter_t fall       = ItTim_Wait_Capture( TIM_CHANNEL_2 );
+    const tim_Counter_t riseSecond = ItTim_Wait_Capture( TIM_CHANNEL_1 );
+
+    TEST_ASSERT_UINT32_WITHIN_MESSAGE( IT_TIM_PAIR_CAPTURE_TOL,
+                                       IT_TIM_PERIOD + 1u,
+                                       ItTim_Get_PairDelta( riseFirst, riseSecond ),
+                                       "Captured PWM period" );
+    TEST_ASSERT_UINT32_WITHIN_MESSAGE( IT_TIM_PAIR_CAPTURE_TOL,
+                                       IT_TIM_PAIR_HIGH_TIME,
+                                       ItTim_Get_PairDelta( riseFirst, fall ),
+                                       "Captured PWM high time" );
+}
+
+
+/**
+ * \brief   Quadrature signal of the source timer is counted by the encoder interface of the
+ *          timer pair in both directions.
+ *
+ * \details Source timer: channels X and Y toggle once per period (1000 us), Y a quarter of the
+ *          signal after X (and X after Y in the second run). Encoder timer of the pair in x4
+ *          mode on TI1 / TI2 (wired to X / Y), counter preset to the middle of the period.
+ *          Position change measured over 50 ms (reference timer).
+ *
+ * \par Expected results
+ * - |change| = 100 +- 8 counts in both runs (4 counts per 2 ms of the quadrature signal).
+ * - The two runs count in opposite directions.
+ */
+void It_Tim_Pair_Encoder_QuadratureSignal_CountsInBothDirections( void )
+{
+    ItTim_RequirePair();
+
+    const int32_t forward  = ItTim_Measure_Encoder( IT_TIM_PAIR_TOGGLE_EARLY, IT_TIM_PAIR_TOGGLE_LATE );
+    const int32_t backward = ItTim_Measure_Encoder( IT_TIM_PAIR_TOGGLE_LATE, IT_TIM_PAIR_TOGGLE_EARLY );
+
+    TEST_ASSERT_INT32_WITHIN_MESSAGE( IT_TIM_PAIR_ENC_TOL,
+                                      (int32_t)IT_TIM_PAIR_ENC_COUNT,
+                                      ItTim_Get_Magnitude( forward ),
+                                      "Encoder count of the first run" );
+    TEST_ASSERT_INT32_WITHIN_MESSAGE( IT_TIM_PAIR_ENC_TOL,
+                                      (int32_t)IT_TIM_PAIR_ENC_COUNT,
+                                      ItTim_Get_Magnitude( backward ),
+                                      "Encoder count of the second run" );
+
+    /* Opposite directions: product of the two changes is negative */
+    TEST_ASSERT_LESS_THAN_INT32_MESSAGE( 0, forward * backward, "Both runs counted in the same direction" );
+}
 
 /* ========================== LOCAL FUNCTIONS =============================== */
 
@@ -1283,7 +1448,7 @@ void It_Tim_Deinit_Tim16_SharedLineKeptForTim1( void )
  * \param timerFreq    [in]: Counter frequency [Hz]
  * \param refreshFreq  [in]: Refresh (counter period) frequency [Hz]
  */
-static void It_Tim_Get_TimeBaseConfig( tim_PeriphConfig_t * const timConfig, tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq )
+static void ItTim_Get_TimeBaseConfig( tim_PeriphConfig_t * const timConfig, tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq )
 {
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_DefaultConfig( timConfig ) );
 
@@ -1294,17 +1459,17 @@ static void It_Tim_Get_TimeBaseConfig( tim_PeriphConfig_t * const timConfig, tim
 
 
 /**
- * \brief Initializes time base of timer (see \ref It_Tim_Get_TimeBaseConfig, \ref Tim_Init).
+ * \brief Initializes time base of timer (see \ref ItTim_Get_TimeBaseConfig, \ref Tim_Init).
  *
  * \param periphId    [in]: Timer peripheral identification
  * \param timerFreq   [in]: Counter frequency [Hz]
  * \param refreshFreq [in]: Refresh (counter period) frequency [Hz]
  */
-static void It_Tim_Init_TimeBase( tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq )
+static void ItTim_Init_TimeBase( tim_PeriphId_t periphId, tim_FreqHz_t timerFreq, tim_FreqHz_t refreshFreq )
 {
     tim_PeriphConfig_t timConfig;
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, periphId, timerFreq, refreshFreq );
+    ItTim_Get_TimeBaseConfig( &timConfig, periphId, timerFreq, refreshFreq );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
 }
 
@@ -1316,11 +1481,11 @@ static void It_Tim_Init_TimeBase( tim_PeriphId_t periphId, tim_FreqHz_t timerFre
  * \param outputPolarity [in]: Output polarity
  * \param idleState      [in]: Output level when main output is disabled
  */
-static void It_Tim_Init_PinChannel( tim_ChannelMode_t channelMode, tim_Polarity_t outputPolarity, tim_Polarity_t idleState )
+static void ItTim_Init_PinChannel( tim_ChannelMode_t channelMode, tim_Polarity_t outputPolarity, tim_Polarity_t idleState )
 {
     tim_PeriphConfig_t timConfig;
 
-    It_Tim_Get_TimeBaseConfig( &timConfig, IT_TIM_ADV, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_ADV, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
 
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState   = TIM_FUNCTION_ACTIVE;
     timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode    = channelMode;
@@ -1337,7 +1502,7 @@ static void It_Tim_Init_PinChannel( tim_ChannelMode_t channelMode, tim_Polarity_
  *
  * \param periphId [in]: Timer peripheral identification
  */
-static void It_Tim_Apply_UpdateEvent( tim_PeriphId_t periphId )
+static void ItTim_Apply_UpdateEvent( tim_PeriphId_t periphId )
 {
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Generate_Event( periphId, TIM_EVENT_UPDATE ) );
     TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Clear_Flag( periphId, TIM_IRQ_UPDATE ) );
@@ -1349,7 +1514,7 @@ static void It_Tim_Apply_UpdateEvent( tim_PeriphId_t periphId )
  *
  * \param waitTime_us [in]: Counter value of reference timer [us]
  */
-static void It_Tim_Wait_RefTime( tim_Counter_t waitTime_us )
+static void ItTim_Wait_RefTime( tim_Counter_t waitTime_us )
 {
     tim_Counter_t refCounter = 0u;
 
@@ -1377,7 +1542,7 @@ static void It_Tim_Wait_RefTime( tim_Counter_t waitTime_us )
  * \param callbackCnt [in]: Callback call counter
  * \param expectedCnt [in]: Required count of callback calls
  */
-static void It_Tim_Wait_CallbackCount( volatile const uint32_t * const callbackCnt, uint32_t expectedCnt )
+static void ItTim_Wait_CallbackCount( volatile const uint32_t * const callbackCnt, uint32_t expectedCnt )
 {
     for( volatile uint32_t loopIdx = 0u; IT_TIM_WAIT_LOOPS > loopIdx; loopIdx++ )
     {
@@ -1396,7 +1561,7 @@ static void It_Tim_Wait_CallbackCount( volatile const uint32_t * const callbackC
 /**
  * \brief Waits until pin level (and timer synchronization logic) is settled.
  */
-static void It_Tim_WaitPinSettled( void )
+static void ItTim_WaitPinSettled( void )
 {
     for( volatile uint32_t loopIdx = 0u; IT_TIM_SETTLE_LOOPS > loopIdx; loopIdx++ )
     {
@@ -1410,11 +1575,11 @@ static void It_Tim_WaitPinSettled( void )
  *
  * \param expectedLevel [in]: Expected pin level
  */
-static void It_Tim_Check_PinLevel( gpio_PinLevel_t expectedLevel )
+static void ItTim_Check_PinLevel( gpio_PinLevel_t expectedLevel )
 {
     gpio_PinLevel_t pinLevel = GPIO_PIN_LEVEL_LOW;
 
-    It_Tim_WaitPinSettled();
+    ItTim_WaitPinSettled();
 
     TEST_ASSERT_EQUAL( GPIO_REQUEST_OK, Gpio_Get_PinLevel( IT_TIM_PWM_PORT, IT_TIM_PWM_PIN_ID, &pinLevel ) );
     TEST_ASSERT_EQUAL( expectedLevel, pinLevel );
@@ -1424,7 +1589,7 @@ static void It_Tim_Check_PinLevel( gpio_PinLevel_t expectedLevel )
 /**
  * \brief Update interrupt callback - counts calls.
  */
-static void It_Tim_UpdateCallback( void )
+static void ItTim_UpdateCallback( void )
 {
     itTim_UpdateCallbackCnt++;
 }
@@ -1433,7 +1598,7 @@ static void It_Tim_UpdateCallback( void )
 /**
  * \brief Update interrupt callback of the second timer - counts calls.
  */
-static void It_Tim_Update2Callback( void )
+static void ItTim_Update2Callback( void )
 {
     itTim_Update2CallbackCnt++;
 }
@@ -1444,8 +1609,207 @@ static void It_Tim_Update2Callback( void )
  *
  * \param overcaptureFlag [in]: Over-capture state
  */
-static void It_Tim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag )
+static void ItTim_CaptureCompareCallback( tim_OvercaptureFlag_t overcaptureFlag )
 {
     itTim_CcOvercapture = overcaptureFlag;
     itTim_CcCallbackCnt++;
+}
+
+
+/**
+ * \brief   Ignores the test on a board whose timer pair is not wired.
+ *
+ * \details Fixture of the board (EmBi_Platform, IntegrationTesting README "Board fixtures"):
+ *          feature TIM_PAIR. A board without a fixture (IT_FIXTURE not defined) is expected to
+ *          have the wiring of its board block.
+ */
+static void ItTim_RequirePair( void )
+{
+#if ( 0u == IT_TIM_PAIR_AVAILABLE )
+    TEST_IGNORE_MESSAGE( "No wiring of a timer pair known for the board" );
+#elif defined(IT_FEATURE_TIM_PAIR) || \
+      !defined(IT_FIXTURE)
+    /* Channels X / Y of the source timer are wired to channels 1 / 2 of the other timer */
+#else
+    TEST_IGNORE_MESSAGE( "Board without the fixture TIM_PAIR (CH1 + CH2 of a timer wired to another timer)" );
+#endif
+}
+
+
+/**
+ * \brief Initializes the source timer of the pair (1 MHz, period 1000 counts) with channels X
+ *        and Y on their pins in the given output mode and compare values.
+ *
+ * \param channelMode [in]: Output mode of both channels
+ * \param xCompare    [in]: Compare value of channel X
+ * \param yCompare    [in]: Compare value of channel Y
+ */
+static void ItTim_Init_PairSource( tim_ChannelMode_t channelMode,
+                                    tim_Counter_t xCompare,
+                                    tim_Counter_t yCompare )
+{
+    tim_PeriphConfig_t timConfig;
+
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_PAIR_SRC, IT_TIM_FREQ_HZ, IT_TIM_REFRESH_HZ );
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_X_CH ].ChannelState   = TIM_FUNCTION_ACTIVE;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_X_CH ].ChannelMode    = channelMode;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_X_CH ].IoPin          = IT_TIM_PAIR_SRC_X_PIN;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_X_CH ].OutputPolarity = TIM_POLARITY_HIGH;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_X_CH ].IdleState      = TIM_POLARITY_LOW;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_Y_CH ].ChannelState   = TIM_FUNCTION_ACTIVE;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_Y_CH ].ChannelMode    = channelMode;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_Y_CH ].IoPin          = IT_TIM_PAIR_SRC_Y_PIN;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_Y_CH ].OutputPolarity = TIM_POLARITY_HIGH;
+    timConfig.ChannelConfig[ IT_TIM_PAIR_SRC_Y_CH ].IdleState      = TIM_POLARITY_LOW;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
+
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CompareValue( IT_TIM_PAIR_SRC, IT_TIM_PAIR_SRC_X_CH, xCompare ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_CompareValue( IT_TIM_PAIR_SRC, IT_TIM_PAIR_SRC_Y_CH, yCompare ) );
+    ItTim_Apply_UpdateEvent( IT_TIM_PAIR_SRC );
+}
+
+
+/**
+ * \brief Waits for a capture of a channel of the capturing timer of the pair and returns the
+ *        captured value (reading clears the capture flag).
+ *
+ * \param channelId [in]: Capture channel
+ *
+ * \return Captured counter value
+ */
+static tim_Counter_t ItTim_Wait_Capture( tim_ChannelId_t channelId )
+{
+    tim_IrqId_t     captureIrq   = TIM_IRQ_CAPTURE_COMPARE_CH1;
+    tim_FlagState_t captureFlag  = TIM_FLAG_INACTIVE;
+    tim_Counter_t   captureValue = 0u;
+
+    if( TIM_CHANNEL_2 == channelId )
+    {
+        captureIrq = TIM_IRQ_CAPTURE_COMPARE_CH2;
+    }
+    else
+    {
+        /* Channel 1 */
+    }
+
+    /* Capture of an earlier edge is discarded */
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Clear_Flag( IT_TIM_PAIR_DST, captureIrq ) );
+
+    for( uint32_t loopIdx = 0u;
+         ( IT_TIM_WAIT_LOOPS > loopIdx ) &&
+         ( TIM_FLAG_INACTIVE == captureFlag );
+         loopIdx++ )
+    {
+        TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Flag( IT_TIM_PAIR_DST, captureIrq, &captureFlag ) );
+    }
+
+    TEST_ASSERT_EQUAL_MESSAGE( TIM_FLAG_ACTIVE, captureFlag, "No capture of the input of the timer pair" );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_CaptureValue( IT_TIM_PAIR_DST, channelId, &captureValue ) );
+
+    return ( captureValue );
+}
+
+
+/**
+ * \brief Returns the count of the capturing timer between two captures (counter overflow at
+ *        the period of the capturing timer).
+ *
+ * \param first  [in]: First captured value
+ * \param second [in]: Second captured value
+ */
+static tim_Counter_t ItTim_Get_PairDelta( tim_Counter_t first, tim_Counter_t second )
+{
+    tim_Counter_t delta = second - first;
+
+    if( second < first )
+    {
+        delta = ( IT_TIM_PAIR_DST_PERIOD - first ) + second;
+    }
+    else
+    {
+        /* No overflow between the captures */
+    }
+
+    return ( delta );
+}
+
+
+/**
+ * \brief Generates the quadrature signal by the source timer (toggle mode, X and Y toggled at
+ *        the given compare values), counts it by the encoder timer of the pair over the
+ *        measuring time and returns the change of the position.
+ *
+ * \param xCompare [in]: Toggle point of channel X
+ * \param yCompare [in]: Toggle point of channel Y
+ *
+ * \return Change of the encoder position [counts] (sign = direction)
+ */
+static int32_t ItTim_Measure_Encoder( tim_Counter_t xCompare, tim_Counter_t yCompare )
+{
+    tim_PeriphConfig_t  timConfig;
+    tim_EncoderConfig_t encoderConfig;
+    tim_Counter_t       position = 0u;
+    tim_Counter_t       refStart = 0u;
+
+    ItTim_Get_TimeBaseConfig( &timConfig, IT_TIM_PAIR_DST, IT_TIM_FREQ_HZ, IT_TIM_PAIR_DST_REFRESH_HZ );
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelState = TIM_FUNCTION_ACTIVE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].ChannelMode  = TIM_CHANNEL_MODE_INPUT_CAPTURE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_1 ].IoPin        = IT_TIM_PAIR_DST_X_PIN;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].ChannelState = TIM_FUNCTION_ACTIVE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].ChannelMode  = TIM_CHANNEL_MODE_INPUT_CAPTURE;
+    timConfig.ChannelConfig[ TIM_CHANNEL_2 ].IoPin        = IT_TIM_PAIR_DST_Y_PIN;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Init( &timConfig ) );
+
+    encoderConfig.EncoderMode = TIM_ENCODER_MODE_X4_TI12;
+    encoderConfig.Ti1Polarity = TIM_INPUT_POLARITY_NORMAL;
+    encoderConfig.Ti2Polarity = TIM_INPUT_POLARITY_NORMAL;
+    encoderConfig.InputFilter = TIM_INPUT_FILTER_INACTIVE;
+    encoderConfig.Period      = IT_TIM_PAIR_DST_PERIOD - 1u;
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Mode_Encoder( IT_TIM_PAIR_DST, &encoderConfig ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Set_Counter( IT_TIM_PAIR_DST, IT_TIM_PAIR_ENC_START ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_PAIR_DST ) );
+
+    ItTim_Init_PairSource( TIM_CHANNEL_MODE_OUTPUT_COMPARE_TOGGLE, xCompare, yCompare );
+    ItTim_Init_TimeBase( IT_TIM_REF, IT_TIM_REF_FREQ_HZ, IT_TIM_REF_REFRESH_HZ );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_PAIR_SRC ) );
+
+    /* First edges of the signal settle the encoder state - the measurement starts later */
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Start( IT_TIM_REF ) );
+    ItTim_Wait_RefTime( IT_TIM_PERIOD + 1u );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_EncoderPosition( IT_TIM_PAIR_DST, &position ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_Counter( IT_TIM_REF, &refStart ) );
+
+    const tim_Counter_t startPosition = position;
+
+    ItTim_Wait_RefTime( refStart + IT_TIM_PAIR_ENC_TIME_US );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Get_EncoderPosition( IT_TIM_PAIR_DST, &position ) );
+
+    /* Timers are stopped - the next measurement initializes them again */
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Stop( IT_TIM_PAIR_SRC ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Stop( IT_TIM_PAIR_DST ) );
+    TEST_ASSERT_EQUAL( TIM_REQUEST_OK, Tim_Stop( IT_TIM_REF ) );
+
+    return ( (int32_t)position - (int32_t)startPosition );
+}
+
+
+/**
+ * \brief Returns the magnitude of a signed count.
+ *
+ * \param value [in]: Signed count
+ */
+static int32_t ItTim_Get_Magnitude( int32_t value )
+{
+    int32_t magnitude = value;
+
+    if( 0 > value )
+    {
+        magnitude = -value;
+    }
+    else
+    {
+        /* Positive value */
+    }
+
+    return ( magnitude );
 }

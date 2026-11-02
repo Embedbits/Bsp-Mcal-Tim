@@ -125,6 +125,7 @@ Everything else — configuration files, static tables, helper functions — is 
   by `Tim_Get_DmaRegAddr()`.
 - Every interrupt service routine ends with DSB (Cortex-M4 r0p1 erratum 838869). STM32L4 errata
   sheets are not reviewed yet.
+- Integration tests (`Tests/IntegrationTests/ItTest_Tim.c`, EmBi_Platform `CMake/IntegrationTesting`): besides the tests without wiring, the timer pair tests (fixture feature `TIM_PAIR`): PWM of the source timer (1 kHz, 25 %) measured by the input capture of the other timer (period on the rising edges of channel 1, high time by channel 2 in the indirect mapping of TI1) and a quadrature signal (channels X / Y in toggle mode) counted by the encoder interface x4 in both directions. NUCLEO-L4R5ZI (the only STM32L4 board of the inventory): TIM3 CH1 PB4 -> TIM8 CH1 PC6, TIM3 CH2 PB5 -> TIM8 CH2 PC7. The pair tests are ignored (`ItTim_RequirePair()`) on a board with a fixture without `TIM_PAIR` and on a board without a wiring known to the test set; a board without a fixture is expected to be wired.
 
 ---
 
