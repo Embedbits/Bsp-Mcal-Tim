@@ -3814,8 +3814,9 @@ tim_RequestState_t Tim_Set_Mode_InputCapture( tim_PeriphId_t periphId, tim_Chann
  *
  * Channels 1 and 2 are configured as direct inputs (polarity, filter), the
  * prescaler divides by 1 (every encoder edge is counted), the auto-reload
- * value is set to the encoder period and the slave mode controller is switched
- * to the required encoder mode. Counting direction is controlled by hardware
+ * value is set to the encoder period, an update event loads the preloaded
+ * prescaler / auto-reload value (counter reset to 0, update flag cleared) and the
+ * slave mode controller is switched to the required encoder mode. Counting direction is controlled by hardware
  * (\ref Tim_Get_CounterDirection), position is read by \ref Tim_Get_EncoderPosition.
  *
  * \note  Encoder mode uses the slave mode selection, clock source and slave
@@ -3934,6 +3935,26 @@ tim_RequestState_t Tim_Set_Mode_Encoder( tim_PeriphId_t periphId, const tim_Enco
     if( TIM_REQUEST_OK == retState )
     {
         retState = Tim_Set_Period( periphId, encoderConfig->Period );
+    }
+    else
+    {
+        /* Previous configuration step failed */
+    }
+
+    /* Prescaler (and the auto-reload value with preload) are preload registers - the update
+     * event loads them (the counter is reset), its update flag is cleared */
+    if( TIM_REQUEST_OK == retState )
+    {
+        retState = Tim_Generate_Event( periphId, TIM_EVENT_UPDATE );
+    }
+    else
+    {
+        /* Previous configuration step failed */
+    }
+
+    if( TIM_REQUEST_OK == retState )
+    {
+        retState = Tim_Clear_Flag( periphId, TIM_IRQ_UPDATE );
     }
     else
     {
