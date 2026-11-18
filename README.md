@@ -200,6 +200,12 @@ Tim/
 
 ---
 
+## Integration Tests
+
+`Tests/IntegrationTests` run on a board (EmBi_Platform `CMake/IntegrationTesting`). The timer pair tests need CH1 and CH2 of a source timer wired to CH1 and CH2 of another timer (fixture feature `TIM_PAIR`): NUCLEO-H7A3ZI-Q TIM3 PB4 / PB5 - TIM8 PC6 / PC7, NUCLEO-H723ZG / NUCLEO-H755ZI-Q TIM1 PA8 / PA9 - TIM8 PC6 / PC7, NUCLEO-H7S3L8 TIM2 PA15 / PA1 - TIM3 PC6 / PC7. The PWM of the source timer (1 kHz, 25 %) is measured by input capture (rising edge, falling edge on the indirect mapping of the same input) and the quadrature signal of the source timer (toggle mode) is counted by the encoder interface in both directions. On a board with a fixture without the feature the pair tests are ignored; a board without a fixture is expected to be wired.
+
+---
+
 ## 🛠 CMake Integration
 
 1. Include `Tim_Lib` in your CMake library.
