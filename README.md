@@ -171,6 +171,12 @@ Tim/
 
 ---
 
+## Integration Tests
+
+`Tests/IntegrationTests` run on a board (EmBi_Platform `CMake/IntegrationTesting`). The timer output tests read the pin of TIM1 channel 1 back (no wiring needed). The pair tests use channels 1 / 2 of one timer wired to channels 1 / 2 of another timer (pins per board in `ItTest_Tim.c`, NUCLEO-F411RE and NUCLEO-F446RE: TIM3 PB4 / PB5 -> TIM4 PB6 / PB7): PWM 1 kHz / 25 % measured by input capture (period and high time, indirect mapping of the second channel) and a quadrature signal (toggle mode) counted by the encoder interface in both directions. The wiring is the fixture feature `TIM_PAIR` of the board: on a board with a fixture without it (and on a board without a known wiring, eg. NUCLEO-F413ZH) the pair tests are ignored, a board without a fixture is expected to be wired.
+
+---
+
 ## 🛠 CMake Integration
 
 1. Include `Tim_Lib` in your CMake library.
